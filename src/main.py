@@ -123,15 +123,15 @@ def add_bridge_access(g, eid, coordstree, spacing, nnearest):
         d += spacing
 
 ##########################################################
-def partition_edges(g, etype, spacing, nnearest=1):
+def partition_edges(g, eids, spacing, nnearest=1):
     """Partition edges of @g of type @etype, and add vertices to the edges
     spaced by @spacing and each new vertex is connected to the nearest node
     """
     info(inspect.stack()[0][3] + '()')
     nvertices = g.vcount()
+    nedges = g.ecount()
     coords = [[float(x), float(y)] for x, y in zip(g.vs['x'], g.vs['y'])]
     coordstree = cKDTree(coords)
-    eids = np.where(np.array(g.es['type']) == BRIDGE)[0]
 
     for eid in eids:
         add_bridge_access(g, eid, coordstree, spacing, nnearest)
@@ -143,13 +143,7 @@ def analyze_random_increment_of_edges(gin, nnewedges, spacing, outcsv):
     """
     info(inspect.stack()[0][3] + '()')
     g = gin.copy()
-    apl = [] # average path lengths
-    # data = {'nvertices' = [],
-            # 'nedges' = [],
-            # 'nbridges' = [],
-            # 'naccess' = [],
-            # 'avgpathlen' = [],
-            # }
+    data = [] # average path lengths
     g.es['type'] = ORIGINAL
     acc = 0
 
@@ -157,11 +151,18 @@ def analyze_random_increment_of_edges(gin, nnewedges, spacing, outcsv):
         nnew = n - acc
         info('Adding {} edges'.format(nnew))
         g = add_new_edges(g, nnew)
-        apl.append([nnew, g.average_path_length()])
+        eids = np.arange(g.ecount() - nnew, g.ecount())
+        g = partition_edges(g, eids, spacing, nnearest=1)
+
+        etypes = np.array(g.es['type'])
+        data.append([g.vcount(), g.ecount(),
+            len(np.where(etypes == BRIDGE)[0]),
+            len(np.where(etypes == BRIDGEACC)[0]),
+            g.average_path_length(),])
         acc += n
 
-    g = partition_edges(g, BRIDGE, spacing, nnearest=1)
-    df = pd.DataFrame(apl, columns=['nnewbridges', 'avgpathlen'])
+    cols = 'nvertices,nedges,nbridges,naccess,avgpathlen'.split(',')
+    df = pd.DataFrame(data, columns=cols)
     df.to_csv(outcsv, index=False)
     return g
 
@@ -231,15 +232,17 @@ def main():
     parser.add_argument('--outdir', default='/tmp/out/', help='Output directory')
     args = parser.parse_args()
 
+    cachedir = './data/'
     if not os.path.isdir(args.outdir): os.mkdir(args.outdir)
+    if not os.path.isdir(cachedir): os.mkdir(cachedir)
 
     np.random.seed(0)
-    outcsv = pjoin(args.outdir, 'shortest.csv')
-    nnewedges = sorted([5, 100])
+    outcsv = pjoin(args.outdir, 'results.csv')
+    nnewedges = sorted([1])
     maxnedges = np.max(nnewedges)
     spacing = 0.005
 
-    g = parse_graphml(args.graphmlpath, 'data/', samplerad=args.samplerad)
+    g = parse_graphml(args.graphmlpath, cachedir, samplerad=args.samplerad)
     info('nvertices: {}'.format(g.vcount()))
     info('nedges: {}'.format(g.ecount()))
 
