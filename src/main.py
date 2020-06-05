@@ -138,7 +138,7 @@ def partition_edges(g, eids, spacing, nnearest=1):
     return g
        
 ##########################################################
-def analyze_random_increment_of_edges(gin, nnewedges, spacing, outcsv):
+def analyze_increment_of_random_edges(gin, nnewedges, spacing, outcsv):
     """Analyze random increment of n edges to @g for each value n in @nnewedges
     """
     info(inspect.stack()[0][3] + '()')
@@ -246,7 +246,7 @@ def main():
     info('nvertices: {}'.format(g.vcount()))
     info('nedges: {}'.format(g.ecount()))
 
-    g = analyze_random_increment_of_edges(g, nnewedges, spacing, outcsv)
+    g = analyze_increment_of_random_edges(g, nnewedges, spacing, outcsv)
     plot_map(g, args.outdir)
     info('Elapsed time:{}'.format(time.time()-t0))
 
