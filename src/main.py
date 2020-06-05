@@ -145,10 +145,10 @@ def analyze_increment_of_random_edges(gin, nnewedges, spacing, outcsv):
     g = gin.copy()
     data = [] # average path lengths
     g.es['type'] = ORIGINAL
-    acc = 0
+    prev = 0
 
     for n in [0] + nnewedges:
-        nnew = n - acc
+        nnew = n - prev
         info('Adding {} edges'.format(nnew))
         g = add_new_edges(g, nnew)
         eids = np.arange(g.ecount() - nnew, g.ecount())
@@ -159,7 +159,7 @@ def analyze_increment_of_random_edges(gin, nnewedges, spacing, outcsv):
             len(np.where(etypes == BRIDGE)[0]),
             len(np.where(etypes == BRIDGEACC)[0]),
             g.average_path_length(),])
-        acc += n
+        prev = n
 
     cols = 'nvertices,nedges,nbridges,naccess,avgpathlen'.split(',')
     df = pd.DataFrame(data, columns=cols)
