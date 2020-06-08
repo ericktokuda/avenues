@@ -79,25 +79,24 @@ def get_points_inside_region(coords, c0, radius):
     return sorted(inds)
 
 ##########################################################
-def add_new_edges(g, n):
+def choose_bridge_endpoints(g, n):
     """Add @nnewedges to @g
     """
     info(inspect.stack()[0][3] + '()')
     nvertices = g.vcount()
+    es = []
     for i in range(n):
         s, t = np.random.choice(nvertices, size=2, replace=False)
-        g.add_edge(s, t)
-        g.es[g.ecount()-1]['type'] = BRIDGE
-    return g
+        es.append([s, t])
+    return np.array(es)
 
 ##########################################################
-def add_bridge_access(g, eid, coordstree, spacing, nnearest):
+def add_bridge_access(g, edge, coordstree, spacing, nnearest):
     """Add @eid bridge access in @g
     """
     info(inspect.stack()[0][3] + '()')
     coords = coordstree.data
-    srcid = g.es[eid].source
-    tgtid = g.es[eid].target
+    srcid, tgtid = edge
     src = coords[srcid]
     tgt = coords[tgtid]
     v = tgt - src
@@ -105,16 +104,19 @@ def add_bridge_access(g, eid, coordstree, spacing, nnearest):
     versor = v / vnorm
 
     d = spacing
-    params = {'type': BRIDGE}
+
+    lastpid = srcid
     while d < vnorm:
         p = src + versor * d
-        g.add_vertex(1, **params)
+        g.add_vertex(p, type=BRIDGE) # new vertex in the bridge
+        newvid = g.vcount() - 1
+        g.add_edge(lastpid, newvid, type=BRIDGE) # new edge in the bridge
         vlast = g.vcount() - 1
         g.vs[vlast]['x'] = p[0]
         g.vs[vlast]['y'] = p[1]
         _, ids = coordstree.query(p, nnearest + 2)
         
-        for i, id in enumerate(ids):
+        for i, id in enumerate(ids): # create accesses
             if i >= nnearest: break
             if id == srcid or id == tgtid: continue
             g.add_edge(vlast, id)
@@ -122,10 +124,12 @@ def add_bridge_access(g, eid, coordstree, spacing, nnearest):
 
         d += spacing
 
+    g.add_edge(lastpid, tgtid, type=BRIDGE) # new edge in the bridge
+
 ##########################################################
-def partition_edges(g, eids, spacing, nnearest=1):
-    """Partition edges of @g of type @etype, and add vertices to the edges
-    spaced by @spacing and each new vertex is connected to the nearest node
+def partition_edges(g, es, spacing, nnearest=1):
+    """Partition bridges spaced by @spacing and each new vertex is connected to
+    the nearest node
     """
     info(inspect.stack()[0][3] + '()')
     nvertices = g.vcount()
@@ -133,8 +137,8 @@ def partition_edges(g, eids, spacing, nnearest=1):
     coords = [[float(x), float(y)] for x, y in zip(g.vs['x'], g.vs['y'])]
     coordstree = cKDTree(coords)
 
-    for eid in eids:
-        add_bridge_access(g, eid, coordstree, spacing, nnearest)
+    for edge in es:
+        add_bridge_access(g, edge, coordstree, spacing, nnearest)
     return g
        
 ##########################################################
@@ -150,9 +154,8 @@ def analyze_increment_of_random_edges(gin, nnewedges, spacing, outcsv):
     for n in [0] + nnewedges:
         nnew = n - prev
         info('Adding {} edges'.format(nnew))
-        g = add_new_edges(g, nnew)
-        eids = np.arange(g.ecount() - nnew, g.ecount())
-        g = partition_edges(g, eids, spacing, nnearest=1)
+        es = choose_bridge_endpoints(g, nnew)
+        g = partition_edges(g, es, spacing, nnearest=1)
 
         etypes = np.array(g.es['type'])
         data.append([g.vcount(), g.ecount(),
@@ -164,6 +167,7 @@ def analyze_increment_of_random_edges(gin, nnewedges, spacing, outcsv):
     cols = 'nvertices,nedges,nbridges,naccess,avgpathlen'.split(',')
     df = pd.DataFrame(data, columns=cols)
     df.to_csv(outcsv, index=False)
+    info('df:{}'.format(df))
     return g
 
 ##########################################################
