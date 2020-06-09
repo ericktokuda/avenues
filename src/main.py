@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Analysis of shortest paths in cities
+We do not consider REAL distances, but difference in lat,lon
 """
 
 import argparse
@@ -36,9 +37,11 @@ def info(*args):
 def parse_graphml(graphmlpath, cachedir, undir=True, samplerad=-1):
     """Read graphml file to igraph object and dump it to @pklpath
     It gets the major component, and simplify it (neither multi nor self loops)
-    Receives the input path @graphmlpath and dump to @pklpath
+    Receives the input path @graphmlpath and dump to @pklpath.
+    Assumes vertex attribs 'x' and 'y' are available
     """
     info(inspect.stack()[0][3] + '()')
+
     f = os.path.splitext(os.path.basename(graphmlpath))[0]
     if samplerad > -1: f += '_rad{}'.format(samplerad)
     pklpath = pjoin(cachedir, f + '.pkl')
@@ -48,11 +51,9 @@ def parse_graphml(graphmlpath, cachedir, undir=True, samplerad=-1):
         return pickle.load(open(pklpath, 'rb'))
 
     g = igraph.Graph.Read(graphmlpath)
-    g.simplify(); info('g.is_simple():{}'.format(g.is_simple()))
+    g.simplify()
 
-    if undir:
-        g.to_undirected()
-        info('g.is_directed():{}'.format(g.is_directed()))
+    if undir: g.to_undirected()
 
     g = sample_circle_from_graph(g, samplerad)
 
@@ -85,15 +86,16 @@ def get_points_inside_region(coords, c0, radius):
     """Get points from @df within circle of center @c0 and @radius
     """
     info(inspect.stack()[0][3] + '()')
+
     kdtree = cKDTree(coords)
     inds = kdtree.query_ball_point(c0, radius)
     return sorted(inds)
 
 ##########################################################
 def choose_bridge_endpoints(g, n):
-    """Add @nnewedges to @g
-    """
+    """Add @nnewedges to @g """
     info(inspect.stack()[0][3] + '()')
+
     nvertices = g.vcount()
     es = []
     for i in range(n):
@@ -103,8 +105,7 @@ def choose_bridge_endpoints(g, n):
 
 ##########################################################
 def calculate_edge_len(g, srcid, tgtid):
-    """Calculate edge length based on 'x' and 'y' attributes
-    """
+    """Calculate edge length based on 'x' and 'y' attributes"""
     src = np.array([float(g.vs[srcid]['x']), float(g.vs[srcid]['y'])])
     tgt = np.array([float(g.vs[tgtid]['x']), float(g.vs[tgtid]['y'])])
     return np.linalg.norm(tgt - src)
@@ -117,8 +118,7 @@ def add_edge(g, srcid, tgtid, eid):
 
 ##########################################################
 def add_bridge_access(g, edge, coordstree, spacing, nnearest):
-    """Add @eid bridge access in @g
-    """
+    """Add @eid bridge access in @g"""
     info(inspect.stack()[0][3] + '()')
     coords = coordstree.data
     srcid, tgtid = edge
@@ -158,6 +158,7 @@ def partition_edges(g, es, spacing, nnearest=1):
     the nearest node
     """
     info(inspect.stack()[0][3] + '()')
+
     nvertices = g.vcount()
     nedges = g.ecount()
     coords = [[x, y] for x, y in zip(g.vs['x'], g.vs['y'])]
@@ -169,8 +170,7 @@ def partition_edges(g, es, spacing, nnearest=1):
        
 ##########################################################
 def add_lengths(g):
-    """Add lengths to the graph
-    """
+    """Add lengths to the graph """
     info(inspect.stack()[0][3] + '()')
     for i, e in enumerate(g.es()):
         srcid, tgtid = e.source, e.target
@@ -184,20 +184,11 @@ def calculate_avg_path_length(g, weighted=False, srctgttypes=None):
     for large graphs
     """
     info(inspect.stack()[0][3] + '()')
+
     if g.is_directed():
         raise Exception('This method considers an undirected graph')
 
-    if weighted:
-        def sho(i, tgtids):
-            return np.array(g.shortest_paths(source=vids[i],
-                target=vids[i+1:],
-                weights=g.es['length'],
-                mode='ALL'))
-    else:
-        def sho(i, tgtids):
-            return np.array(g.shortest_paths(source=vids[i],
-                target=vids[i+1:],
-                mode='ALL'))
+    weights = g.es['length'] if weighted else np.array([1] * g.ecount())
 
     dsum = 0; d2sum = 0
     if srctgttypes == None:
@@ -206,7 +197,9 @@ def calculate_avg_path_length(g, weighted=False, srctgttypes=None):
         vids = np.where(np.array(g.vs['type']) == srctgttypes)[0]
     
     for i, srcid in enumerate(range(len(vids))): #Assuming undirected graph
-        aux = sho(i, vids)
+        aux =  np.array(g.shortest_paths(source=vids[i], target=vids[i+1:],
+            weights=g.es['length'], mode='ALL'))
+
         dsum += np.sum(aux)
         d2sum += np.sum(np.square(aux))
 
@@ -216,11 +209,12 @@ def calculate_avg_path_length(g, weighted=False, srctgttypes=None):
     return distmean, diststd
 
 ##########################################################
-def analyze_increment_of_random_edges(gin, nnewedges, spacing, outcsv):
+def analyze_increment_of_random_edges(g, nnewedges, spacing, outcsv):
     """Analyze random increment of n edges to @g for each value n in @nnewedges
     """
     info(inspect.stack()[0][3] + '()')
-    g = gin.copy()
+
+    # g = g.copy()
     data = [] # average path lengths
     g.es['type'] = ORIGINAL
     prev = 0
@@ -241,10 +235,8 @@ def analyze_increment_of_random_edges(gin, nnewedges, spacing, outcsv):
         betwvmean, betwvstd = np.mean(bv), np.std(bv)
 
         data.append([g.vcount(), g.ecount(),
-            n,
-            len(np.where(etypes == BRIDGEACC)[0]),
-            meanw, stdw,
-            betwvmean, betwvstd,
+            n, len(np.where(etypes == BRIDGEACC)[0]),
+            meanw, stdw, betwvmean, betwvstd,
             ])
         prev = n
 
@@ -317,12 +309,14 @@ def main():
     info(inspect.stack()[0][3] + '()')
     t0 = time.time()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--graphmlpath', required=True, help='Path to the map in graphml')
-    parser.add_argument('--samplerad', default=-1, type=float, help='Sample radius')
+    parser.add_argument('--graphmlpath', required=True,
+            help='Path to the map in graphml')
+    parser.add_argument('--samplerad', default=-1, type=float,
+            help='Sample radius')
     parser.add_argument('--outdir', default='/tmp/out/', help='Output directory')
     args = parser.parse_args()
 
-    cachedir = './data/'
+    cachedir = './cache/'
     if not os.path.isdir(args.outdir): os.mkdir(args.outdir)
     if not os.path.isdir(cachedir): os.mkdir(cachedir)
 

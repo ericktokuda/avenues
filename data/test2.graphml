@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns"  
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns
+     http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
+  <key attr.name="x" attr.type="string" for="node" id="idx" />
+  <key attr.name="y" attr.type="string" for="node" id="idy" />
+  <key attr.name="z" attr.type="string" for="node" id="idz" />
+  <graph id="G" edgedefault="directed">
+    <node id="n0">
+      <data key="idx">0</data>
+      <data key="idy">0</data>
+      <data key="idz">Hello</data>
+    </node>
+    <node id="n1">
+      <data key="idx">1</data>
+      <data key="idy">1</data>
+      <data key="idz">Bye</data>
+    </node>
+
+		<edge source="n0" target="n0" comment="self-loop"/>
+		<edge source="n0" target="n1"/>
+  </graph>
+</graphml>
