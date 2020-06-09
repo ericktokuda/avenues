@@ -33,8 +33,9 @@ def info(*args):
     print(pref, *args, file=sys.stdout)
 
 ##########################################################
-def parse_graphml(graphmlpath, cachedir, samplerad=-1):
+def parse_graphml(graphmlpath, cachedir, undir=True, samplerad=-1):
     """Read graphml file to igraph object and dump it to @pklpath
+    It gets the major component, and simplify it (neither multi nor self loops)
     Receives the input path @graphmlpath and dump to @pklpath
     """
     info(inspect.stack()[0][3] + '()')
@@ -47,8 +48,18 @@ def parse_graphml(graphmlpath, cachedir, samplerad=-1):
         return pickle.load(open(pklpath, 'rb'))
 
     g = igraph.Graph.Read(graphmlpath)
-    g.simplify(); g.to_undirected()
+    g.simplify(); info('g.is_simple():{}'.format(g.is_simple()))
+
+    if undir:
+        g.to_undirected()
+        info('g.is_directed():{}'.format(g.is_directed()))
+
     g = sample_circle_from_graph(g, samplerad)
+
+    g = g.components(mode='weak').giant()
+    info('g.is_connected():{}'.format(g.is_connected()))
+
+    g = add_lengths(g)
     g.vs['type'] = ORIGINAL
     g.es['type'] = ORIGINAL
     pickle.dump(g, open(pklpath, 'wb'))
@@ -61,7 +72,7 @@ def sample_circle_from_graph(g, radius):
     info(inspect.stack()[0][3] + '()')
     
     if radius < 0: return g
-    coords = [(float(x), float(y)) for x, y in zip(g.vs['x'], g.vs['y'])]
+    coords = [(x, y) for x, y in zip(g.vs['x'], g.vs['y'])]
     c0 = coords[np.random.randint(g.vcount())]
     ids = get_points_inside_region(coords, c0, radius)
     todel = np.ones(g.vcount(), bool)
@@ -91,6 +102,20 @@ def choose_bridge_endpoints(g, n):
     return np.array(es)
 
 ##########################################################
+def calculate_edge_len(g, srcid, tgtid):
+    """Calculate edge length based on 'x' and 'y' attributes
+    """
+    src = np.array([float(g.vs[srcid]['x']), float(g.vs[srcid]['y'])])
+    tgt = np.array([float(g.vs[tgtid]['x']), float(g.vs[tgtid]['y'])])
+    return np.linalg.norm(tgt - src)
+
+##########################################################
+def add_edge(g, srcid, tgtid, eid):
+    g.add_edge(srcid, tgtid, type=eid)
+    g.es[g.ecount() - 1]['length'] = calculate_edge_len(g, srcid, tgtid)
+    return g
+
+##########################################################
 def add_bridge_access(g, edge, coordstree, spacing, nnearest):
     """Add @eid bridge access in @g
     """
@@ -108,9 +133,11 @@ def add_bridge_access(g, edge, coordstree, spacing, nnearest):
     lastpid = srcid
     while d < vnorm:
         p = src + versor * d
-        g.add_vertex(p, type=BRIDGE) # new vertex in the bridge
+        params = {'type':BRIDGE, 'x':p[0], 'y':p[1]}
+        g.add_vertex(p, **params) # new vertex in the bridge
+        
         newvid = g.vcount() - 1
-        g.add_edge(lastpid, newvid, type=BRIDGE) # new edge in the bridge
+        g = add_edge(g, lastpid, newvid, BRIDGE)
         vlast = g.vcount() - 1
         g.vs[vlast]['x'] = p[0]
         g.vs[vlast]['y'] = p[1]
@@ -119,12 +146,11 @@ def add_bridge_access(g, edge, coordstree, spacing, nnearest):
         for i, id in enumerate(ids): # create accesses
             if i >= nnearest: break
             if id == srcid or id == tgtid: continue
-            g.add_edge(vlast, id)
-            g.es[g.ecount()-1]['type'] = BRIDGEACC
+            g = add_edge(g, vlast, id, BRIDGEACC)
 
         d += spacing
 
-    g.add_edge(lastpid, tgtid, type=BRIDGE) # new edge in the bridge
+    g = add_edge(g, lastpid, tgtid, BRIDGE)
 
 ##########################################################
 def partition_edges(g, es, spacing, nnearest=1):
@@ -134,13 +160,61 @@ def partition_edges(g, es, spacing, nnearest=1):
     info(inspect.stack()[0][3] + '()')
     nvertices = g.vcount()
     nedges = g.ecount()
-    coords = [[float(x), float(y)] for x, y in zip(g.vs['x'], g.vs['y'])]
+    coords = [[x, y] for x, y in zip(g.vs['x'], g.vs['y'])]
     coordstree = cKDTree(coords)
 
     for edge in es:
         add_bridge_access(g, edge, coordstree, spacing, nnearest)
     return g
        
+##########################################################
+def add_lengths(g):
+    """Add lengths to the graph
+    """
+    info(inspect.stack()[0][3] + '()')
+    for i, e in enumerate(g.es()):
+        srcid, tgtid = e.source, e.target
+        g.es[i]['length'] = calculate_edge_len(g, srcid, tgtid)
+    return g
+
+##########################################################
+def calculate_avg_path_length(g, weighted=False, srctgttypes=None):
+    """Calculate avg path length of @g.
+    Calling all at once, without the loop on the vertices, it crashes
+    for large graphs
+    """
+    info(inspect.stack()[0][3] + '()')
+    if g.is_directed():
+        raise Exception('This method considers an undirected graph')
+
+    if weighted:
+        def sho(i, tgtids):
+            return np.array(g.shortest_paths(source=vids[i],
+                target=vids[i+1:],
+                weights=g.es['length'],
+                mode='ALL'))
+    else:
+        def sho(i, tgtids):
+            return np.array(g.shortest_paths(source=vids[i],
+                target=vids[i+1:],
+                mode='ALL'))
+
+    dsum = 0; d2sum = 0
+    if srctgttypes == None:
+        vids = list(range(g.vcount()))
+    else: # consider src and tget of particular types
+        vids = np.where(np.array(g.vs['type']) == srctgttypes)[0]
+    
+    for i, srcid in enumerate(range(len(vids))): #Assuming undirected graph
+        aux = sho(i, vids)
+        dsum += np.sum(aux)
+        d2sum += np.sum(np.square(aux))
+
+    ndists = int((g.vcount() * (g.vcount()-1)) / 2) # diagonal
+    distmean = dsum / ndists
+    diststd = np.sqrt(( d2sum - (dsum**2)/ndists ) / ndists)
+    return distmean, diststd
+
 ##########################################################
 def analyze_increment_of_random_edges(gin, nnewedges, spacing, outcsv):
     """Analyze random increment of n edges to @g for each value n in @nnewedges
@@ -158,13 +232,25 @@ def analyze_increment_of_random_edges(gin, nnewedges, spacing, outcsv):
         g = partition_edges(g, es, spacing, nnearest=1)
 
         etypes = np.array(g.es['type'])
+        
+        meanw, stdw = calculate_avg_path_length(g,
+                weighted=True,
+                srctgttypes=None,)
+        
+        bv = g.betweenness()
+        betwvmean, betwvstd = np.mean(bv), np.std(bv)
+
         data.append([g.vcount(), g.ecount(),
-            len(np.where(etypes == BRIDGE)[0]),
+            n,
             len(np.where(etypes == BRIDGEACC)[0]),
-            g.average_path_length(),])
+            meanw, stdw,
+            betwvmean, betwvstd,
+            ])
         prev = n
 
-    cols = 'nvertices,nedges,nbridges,naccess,avgpathlen'.split(',')
+    cols = 'nvertices,nedges,nbridges,naccess,' \
+            'avgpathlen,stdpathlen,betwvmean,betwvstd'.\
+            split(',')
     df = pd.DataFrame(data, columns=cols)
     df.to_csv(outcsv, index=False)
     info('df:{}'.format(df))
@@ -246,7 +332,18 @@ def main():
     maxnedges = np.max(nnewedges)
     spacing = 0.005
 
-    g = parse_graphml(args.graphmlpath, cachedir, samplerad=args.samplerad)
+    g = parse_graphml(args.graphmlpath, cachedir, undir=True,
+            samplerad=args.samplerad)
+    # mean1, std1 = calculate_avg_path_length(g, weighted=True)
+
+    # s = np.array(g.shortest_paths(weights=g.es['length'])).flatten()
+    # inds = np.where(s == 0)[0][:g.vcount()]
+    # all = np.delete(s, inds)
+    # info('CORRECT mean:{}, std:{}'.format(np.mean(all), np.std(s)))
+
+    
+    # l2 = calculate_avg_path_length(g, weighted=True)
+    # return
     info('nvertices: {}'.format(g.vcount()))
     info('nedges: {}'.format(g.ecount()))
 
