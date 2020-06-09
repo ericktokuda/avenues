@@ -334,16 +334,7 @@ def main():
 
     g = parse_graphml(args.graphmlpath, cachedir, undir=True,
             samplerad=args.samplerad)
-    # mean1, std1 = calculate_avg_path_length(g, weighted=True)
 
-    # s = np.array(g.shortest_paths(weights=g.es['length'])).flatten()
-    # inds = np.where(s == 0)[0][:g.vcount()]
-    # all = np.delete(s, inds)
-    # info('CORRECT mean:{}, std:{}'.format(np.mean(all), np.std(s)))
-
-    
-    # l2 = calculate_avg_path_length(g, weighted=True)
-    # return
     info('nvertices: {}'.format(g.vcount()))
     info('nedges: {}'.format(g.ecount()))
 
