@@ -92,16 +92,19 @@ def get_points_inside_region(coords, c0, radius):
     return sorted(inds)
 
 ##########################################################
-def choose_bridge_endpoints(g, n):
+def choose_bridge_endpoints(g):
     """Add @nnewedges to @g """
-    info(inspect.stack()[0][3] + '()')
-
+    # info(inspect.stack()[0][3] + '()')
     nvertices = g.vcount()
-    es = []
-    for i in range(n):
+
+    maxntries = 50
+    for i in range(maxntries):
         s, t = np.random.randint(nvertices, size=2)
-        es.append([s, t])
-    return np.array(es)
+        if t not in g.neighbors(s):
+            return np.array([[s, t]])
+
+    raise Exception('Too many tries on choosing a new edge\n' \
+            'The graph is almost complete (v:{} e:{}) .'.format(g.vcount(), g.ecount()))
 
 ##########################################################
 def calculate_edge_len(g, srcid, tgtid):
@@ -119,7 +122,7 @@ def add_edge(g, srcid, tgtid, eid):
 ##########################################################
 def add_detour_route(g, edge, coordstree, spacing, nnearest):
     """Add shortcut path etween @edge vertices"""
-    info(inspect.stack()[0][3] + '()')
+    # info(inspect.stack()[0][3] + '()')
     coords = coordstree.data
     srcid, tgtid = edge
     src = coords[srcid]
@@ -132,17 +135,22 @@ def add_detour_route(g, edge, coordstree, spacing, nnearest):
 
     lastpid = srcid
     vlast = srcid
+    nnewedges = 0
+
     while d < vnorm:
+
         p = src + versor * d
-        _, ids = coordstree.query(p, 3)
+        _, ids = coordstree.query(p, 3) # in the worst case, the 2 first are the src and tgt
  
-        for i, id in enumerate(ids): # create accesses
-            if id == srcid or id == tgtid: continue
-            g = add_edge(g, vlast, id, BRIDGEACC)
-            break
+        for i, id in enumerate(ids):
+            if id != srcid and id != tgtid:
+                g = add_edge(g, vlast, id, BRIDGEACC)
+                break
 
         vlast = id
         d += spacing
+
+    return add_edge(g, vlast, tgtid, BRIDGEACC)
 
 ##########################################################
 def add_bridge_access(g, edge, coordstree, spacing, nnearest):
@@ -211,9 +219,8 @@ def add_lengths(g):
 def calculate_avg_path_length(g, weighted=False, srctgttypes=None):
     """Calculate avg path length of @g.
     Calling all at once, without the loop on the vertices, it crashes
-    for large graphs
-    """
-    info(inspect.stack()[0][3] + '()')
+    for large graphs """
+    # info(inspect.stack()[0][3] + '()')
 
     if g.is_directed():
         raise Exception('This method considers an undirected graph')
@@ -244,15 +251,15 @@ def analyze_increment_of_random_edges(g, nnewedges, spacing, outcsv):
     """
     info(inspect.stack()[0][3] + '()')
 
-    # g = g.copy()
     data = [] # average path lengths
     g.es['type'] = ORIGINAL
     prev = 0
 
     for n in range(nnewedges+1):
-        nnew = n - prev
-        info('Adding {} edges'.format(nnew))
-        es = choose_bridge_endpoints(g, nnew)
+        info('n:{}'.format(n))
+        es = choose_bridge_endpoints(g)
+
+        k = g.ecount()
         g = partition_edges(g, es, spacing, nnearest=1)
 
         etypes = np.array(g.es['type'])
@@ -268,7 +275,6 @@ def analyze_increment_of_random_edges(g, nnewedges, spacing, outcsv):
             n, len(np.where(etypes == BRIDGEACC)[0]),
             meanw, stdw, betwvmean, betwvstd,
             ])
-        prev = n
 
     cols = 'nvertices,nedges,nbridges,naccess,' \
             'avgpathlen,stdpathlen,betwvmean,betwvstd'.\
