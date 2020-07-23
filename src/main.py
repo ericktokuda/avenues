@@ -249,7 +249,7 @@ def analyze_increment_of_random_edges(g, nnewedges, spacing, outcsv):
     g.es['type'] = ORIGINAL
     prev = 0
 
-    for n in [0] + nnewedges:
+    for n in range(nnewedges+1):
         nnew = n - prev
         info('Adding {} edges'.format(nnew))
         es = choose_bridge_endpoints(g, nnew)
@@ -344,6 +344,8 @@ def main():
             help='Path to the map in graphml')
     parser.add_argument('--samplerad', default=-1, type=float,
             help='Sample radius')
+    parser.add_argument('--nedges', default=1, type=int,
+            help='Sample radius')
     parser.add_argument('--outdir', default='/tmp/out/', help='Output directory')
     args = parser.parse_args()
 
@@ -353,7 +355,7 @@ def main():
 
     np.random.seed(0)
     outcsv = pjoin(args.outdir, 'results.csv')
-    nnewedges = sorted([1])
+    nnewedges = args.nedges
     maxnedges = np.max(nnewedges)
     spacing = 0.005
 
