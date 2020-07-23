@@ -99,7 +99,7 @@ def choose_bridge_endpoints(g, n):
     nvertices = g.vcount()
     es = []
     for i in range(n):
-        s, t = np.random.choice(nvertices, size=2, replace=False)
+        s, t = np.random.randint(nvertices, size=2)
         es.append([s, t])
     return np.array(es)
 
@@ -309,7 +309,7 @@ def main():
     info(inspect.stack()[0][3] + '()')
     t0 = time.time()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--graphmlpath', required=True,
+    parser.add_argument('--graphml', required=True,
             help='Path to the map in graphml')
     parser.add_argument('--samplerad', default=-1, type=float,
             help='Sample radius')
@@ -326,7 +326,7 @@ def main():
     maxnedges = np.max(nnewedges)
     spacing = 0.005
 
-    g = parse_graphml(args.graphmlpath, cachedir, undir=True,
+    g = parse_graphml(args.graphml, cachedir, undir=True,
             samplerad=args.samplerad)
 
     info('nvertices: {}'.format(g.vcount()))
