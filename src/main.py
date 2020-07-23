@@ -117,8 +117,8 @@ def add_edge(g, srcid, tgtid, eid):
     return g
 
 ##########################################################
-def add_bridge_access(g, edge, coordstree, spacing, nnearest):
-    """Add @eid bridge access in @g"""
+def add_detour_route(g, edge, coordstree, spacing, nnearest):
+    """Add shortcut path etween @edge vertices"""
     info(inspect.stack()[0][3] + '()')
     coords = coordstree.data
     srcid, tgtid = edge
@@ -131,6 +131,35 @@ def add_bridge_access(g, edge, coordstree, spacing, nnearest):
     d = spacing
 
     lastpid = srcid
+    vlast = srcid
+    while d < vnorm:
+        p = src + versor * d
+        _, ids = coordstree.query(p, 3)
+ 
+        for i, id in enumerate(ids): # create accesses
+            if id == srcid or id == tgtid: continue
+            g = add_edge(g, vlast, id, BRIDGEACC)
+            break
+
+        vlast = id
+        d += spacing
+
+##########################################################
+def add_bridge_access(g, edge, coordstree, spacing, nnearest):
+    """Add @eid bridge and accesses in @g"""
+    info(inspect.stack()[0][3] + '()')
+    coords = coordstree.data
+    srcid, tgtid = edge
+    src = coords[srcid]
+    tgt = coords[tgtid]
+    v = tgt - src
+    vnorm = np.linalg.norm(v)
+    versor = v / vnorm
+
+    d = spacing
+
+    lastpid = srcid
+    vlast = srcid
     while d < vnorm:
         p = src + versor * d
         params = {'type':BRIDGE, 'x':p[0], 'y':p[1]}
@@ -142,7 +171,7 @@ def add_bridge_access(g, edge, coordstree, spacing, nnearest):
         g.vs[vlast]['x'] = p[0]
         g.vs[vlast]['y'] = p[1]
         _, ids = coordstree.query(p, nnearest + 2)
-        
+ 
         for i, id in enumerate(ids): # create accesses
             if i >= nnearest: break
             if id == srcid or id == tgtid: continue
@@ -157,7 +186,7 @@ def partition_edges(g, es, spacing, nnearest=1):
     """Partition bridges spaced by @spacing and each new vertex is connected to
     the nearest node
     """
-    info(inspect.stack()[0][3] + '()')
+    # info(inspect.stack()[0][3] + '()')
 
     nvertices = g.vcount()
     nedges = g.ecount()
@@ -165,7 +194,8 @@ def partition_edges(g, es, spacing, nnearest=1):
     coordstree = cKDTree(coords)
 
     for edge in es:
-        add_bridge_access(g, edge, coordstree, spacing, nnearest)
+        # add_bridge_access(g, edge, coordstree, spacing, nnearest)
+        add_detour_route(g, edge, coordstree, spacing, nnearest)
     return g
        
 ##########################################################
@@ -265,7 +295,7 @@ def hex2rgb(hexcolours, normalized=False, alpha=None):
     return rgbcolours
 
 ##########################################################
-def plot_map(g, outdir):
+def plot_map(g, outdir, vertices=False):
     """Plot map g, according to 'type' attrib both in vertices and in edges
     """
     
@@ -296,8 +326,9 @@ def plot_map(g, outdir):
     
     coords = np.array([[float(x), float(y)] for x, y in zip(g.vs['x'], g.vs['y'])])
 
-    # vids = np.where(np.array(g.vs['type']) == ORIGINAL)[0]
-    # axs[0, 0].scatter(coords[vids, 0], coords[vids, 1])
+    if vertices:
+        vids = np.where(np.array(g.vs['type']) == ORIGINAL)[0]
+        axs[0, 0].scatter(coords[vids, 0], coords[vids, 1])
 
     vids = np.where(np.array(g.vs['type']) == BRIDGE)[0]
     axs[0, 0].scatter(coords[vids, 0], coords[vids, 1], s=figscale*.1, c='k')
