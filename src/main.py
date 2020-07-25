@@ -95,13 +95,15 @@ def get_points_inside_region(coords, c0, radius):
 def choose_bridge_endpoints(g):
     """Add @nnewedges to @g """
     # info(inspect.stack()[0][3] + '()')
-    nvertices = g.vcount()
+    orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0]
+
+    nvertices = len(orig)
 
     maxntries = 50
     for i in range(maxntries):
         s, t = np.random.randint(nvertices, size=2)
-        if t not in g.neighbors(s):
-            return np.array([[s, t]])
+        if orig[t] not in g.neighbors(orig[s]):
+            return np.array([[orig[s], orig[t]]])
 
     raise Exception('Too many tries on choosing a new edge\n' \
             'The graph is almost complete (v:{} e:{}) .'.format(g.vcount(), g.ecount()))
@@ -120,10 +122,11 @@ def add_edge(g, srcid, tgtid, eid):
     return g
 
 ##########################################################
-def add_detour_route(g, edge, coordstree, spacing, nnearest):
+def add_detour_route(g, edge, origtree, spacing, nnearest):
     """Add shortcut path etween @edge vertices"""
     # info(inspect.stack()[0][3] + '()')
-    coords = coordstree.data
+    orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0]
+    coords = origtree.data
     srcid, tgtid = edge
     src = coords[srcid]
     tgt = coords[tgtid]
@@ -140,11 +143,11 @@ def add_detour_route(g, edge, coordstree, spacing, nnearest):
     while d < vnorm:
 
         p = src + versor * d
-        _, ids = coordstree.query(p, 3) # in the worst case, the 2 first are the src and tgt
+        _, ids = origtree.query(p, 3) # in the worst case, the 2 first are the src and tgt
  
         for i, id in enumerate(ids):
-            if id != srcid and id != tgtid:
-                g = add_edge(g, vlast, id, BRIDGEACC)
+            if orig[id] != srcid and orig[id] != tgtid:
+                g = add_edge(g, vlast, orig[id], BRIDGEACC)
                 break
 
         vlast = id
@@ -153,10 +156,11 @@ def add_detour_route(g, edge, coordstree, spacing, nnearest):
     return add_edge(g, vlast, tgtid, BRIDGEACC)
 
 ##########################################################
-def add_bridge_access(g, edge, coordstree, spacing, nnearest):
+def add_bridge(g, edge, origtree, spacing, nnearest):
     """Add @eid bridge and accesses in @g"""
     info(inspect.stack()[0][3] + '()')
-    coords = coordstree.data
+    orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0]
+    coords = origtree.data
     srcid, tgtid = edge
     src = coords[srcid]
     tgt = coords[tgtid]
@@ -170,7 +174,7 @@ def add_bridge_access(g, edge, coordstree, spacing, nnearest):
     vlast = srcid
     while d < vnorm:
         p = src + versor * d
-        params = {'type':BRIDGE, 'x':p[0], 'y':p[1]}
+        params = {'type':BRIDGEACC, 'x':p[0], 'y':p[1]}
         g.add_vertex(p, **params) # new vertex in the bridge
         
         newvid = g.vcount() - 1
@@ -178,12 +182,12 @@ def add_bridge_access(g, edge, coordstree, spacing, nnearest):
         vlast = g.vcount() - 1
         g.vs[vlast]['x'] = p[0]
         g.vs[vlast]['y'] = p[1]
-        _, ids = coordstree.query(p, nnearest + 2)
+        _, ids = origtree.query(p, nnearest + 2)
  
         for i, id in enumerate(ids): # create accesses
             if i >= nnearest: break
-            if id == srcid or id == tgtid: continue
-            g = add_edge(g, vlast, id, BRIDGEACC)
+            if orig[id] == srcid or orig[id] == tgtid: continue
+            g = add_edge(g, vlast, orig[id], BRIDGEACC)
 
         d += spacing
 
@@ -196,14 +200,14 @@ def partition_edges(g, es, spacing, nnearest=1):
     """
     # info(inspect.stack()[0][3] + '()')
 
-    nvertices = g.vcount()
-    nedges = g.ecount()
-    coords = [[x, y] for x, y in zip(g.vs['x'], g.vs['y'])]
-    coordstree = cKDTree(coords)
+    orig = list(np.where(np.array(g.vs['type']) != BRIDGEACC)[0])
+
+    coords = [[x, y] for x, y in zip(g.vs[orig]['x'], g.vs[orig]['y'])]
+    origtree = cKDTree(coords)
 
     for edge in es:
-        # add_bridge_access(g, edge, coordstree, spacing, nnearest)
-        add_detour_route(g, edge, coordstree, spacing, nnearest)
+        add_bridge(g, edge, origtree, spacing, nnearest)
+        # add_detour_route(g, edge, origtree, spacing, nnearest)
     return g
        
 ##########################################################
@@ -255,9 +259,12 @@ def analyze_increment_of_random_edges(g, nnewedges, spacing, outcsv):
     g.es['type'] = ORIGINAL
     prev = 0
 
-    for n in range(nnewedges+1):
+    for n in range(nnewedges):
         info('n:{}'.format(n))
         es = choose_bridge_endpoints(g)
+
+        g.vs[es[0][0]]['type'] = BRIDGE
+        g.vs[es[0][1]]['type'] = BRIDGE
 
         k = g.ecount()
         g = partition_edges(g, es, spacing, nnearest=1)
@@ -363,7 +370,7 @@ def main():
     outcsv = pjoin(args.outdir, 'results.csv')
     nnewedges = args.nedges
     maxnedges = np.max(nnewedges)
-    spacing = 0.005
+    spacing = 0.001
 
     g = parse_graphml(args.graphml, cachedir, undir=True,
             samplerad=args.samplerad)
