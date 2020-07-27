@@ -58,11 +58,13 @@ def parse_graphml(graphmlpath, cachedir, undir=True, samplerad=-1):
     g = sample_circle_from_graph(g, samplerad)
 
     g = g.components(mode='weak').giant()
+    g['origvcount'] = g.vcount()
     info('g.is_connected():{}'.format(g.is_connected()))
 
     g = add_lengths(g)
     g.vs['type'] = ORIGINAL
     g.es['type'] = ORIGINAL
+    g.es['bridgeid'] = -1
     pickle.dump(g, open(pklpath, 'wb'))
     return g
 
@@ -116,9 +118,11 @@ def calculate_edge_len(g, srcid, tgtid):
     return np.linalg.norm(tgt - src)
 
 ##########################################################
-def add_wedge(g, srcid, tgtid, eid):
+def add_wedge(g, srcid, tgtid, eid, bridgeid=-1):
     g.add_edge(srcid, tgtid, type=eid)
-    g.es[g.ecount() - 1]['length'] = calculate_edge_len(g, srcid, tgtid)
+    eid = g.ecount() - 1
+    g.es[eid]['length'] = calculate_edge_len(g, srcid, tgtid)
+    g.es[eid]['bridgeid'] = bridgeid
     return g
 
 ##########################################################
@@ -232,7 +236,7 @@ def calculate_avg_path_length(g, weighted=False, srctgttypes=None):
     if srctgttypes == None:
         vids = list(range(g.vcount()))
     else: # consider src and tget of particular types
-        vids = np.where(np.array(g.vs['type']) == srctgttypes)[0]
+        vids = np.nonzero(np.isin(np.array(g.vs['type']), srctgttypes))[0]
     
     for i, srcid in enumerate(range(len(vids))): #Assuming undirected graph
         aux =  np.array(g.shortest_paths(source=vids[i], target=vids[i+1:],
@@ -247,37 +251,40 @@ def calculate_avg_path_length(g, weighted=False, srctgttypes=None):
     return distmean, diststd
 
 ##########################################################
-def analyze_increment_of_random_edges(g, nnewedges, spacing, outcsv):
+def extract_features(g, nbridges):
+    """Extract features from graph @g """
+    info(inspect.stack()[0][3] + '()')
+    etypes = np.array(g.es['type'])
+    meanw, stdw = calculate_avg_path_length(g, weighted=True,
+            srctgttypes=[ORIGINAL, BRIDGE],)
+
+    bv = g.betweenness()
+    betwvmean, betwvstd = np.mean(bv), np.std(bv)
+
+    return [g.vcount(), g.ecount(),
+        nbridges, len(np.where(etypes == BRIDGEACC)[0]),
+        meanw, stdw, betwvmean, betwvstd,
+        ]
+##########################################################
+def analyze_increment_of_random_edges(g, nbridges, spacing, outcsv):
     """Analyze random increment of n edges to @g for each value n in @nnewedges
     """
     info(inspect.stack()[0][3] + '()')
 
-    data = [] # average path lengths
     g.es['type'] = ORIGINAL
     prev = 0
 
-    for n in range(nnewedges):
-        info('n:{}'.format(n))
+    data = []
+    data.append(extract_features(g, 0))
+
+    for i in range(1, nbridges + 1):
+        info('bridgeid:{}'.format(i))
         es = choose_bridge_endpoints(g)
 
         g.vs[es[0][0]]['type'] = BRIDGE
         g.vs[es[0][1]]['type'] = BRIDGE
-
-        k = g.ecount()
         g = partition_edges(g, es, spacing, nnearest=1)
-        etypes = np.array(g.es['type'])
-        
-        meanw, stdw = calculate_avg_path_length(g,
-                weighted=True,
-                srctgttypes=ORIGINAL,)
-        
-        bv = g.betweenness()
-        betwvmean, betwvstd = np.mean(bv), np.std(bv)
-
-        data.append([g.vcount(), g.ecount(),
-            n, len(np.where(etypes == BRIDGEACC)[0]),
-            meanw, stdw, betwvmean, betwvstd,
-            ])
+        data.append(extract_features(g, i))
 
     cols = 'nvertices,nedges,nbridges,naccess,' \
             'avgpathlen,stdpathlen,betwvmean,betwvstd'.\
@@ -357,23 +364,25 @@ def main():
     parser.add_argument('--outdir', default='/tmp/out/', help='Output directory')
     args = parser.parse_args()
 
-    cachedir = './cache/'
     if not os.path.isdir(args.outdir): os.mkdir(args.outdir)
-    if not os.path.isdir(cachedir): os.mkdir(cachedir)
 
     np.random.seed(0)
     outcsv = pjoin(args.outdir, 'results.csv')
+    outpklpath = pjoin(args.outdir, 'finalgraph.pkl')
     nnewedges = args.nedges
     maxnedges = np.max(nnewedges)
-    spacing = 0.001
+    spacing = 0.01
 
-    g = parse_graphml(args.graphml, cachedir, undir=True,
+    g = parse_graphml(args.graphml, args.outdir, undir=True,
             samplerad=args.samplerad)
 
     info('nvertices: {}'.format(g.vcount()))
     info('nedges: {}'.format(g.ecount()))
 
     g = analyze_increment_of_random_edges(g, nnewedges, spacing, outcsv)
+
+    pickle.dump(g, open(outpklpath, 'wb'))
+
     plot_map(g, args.outdir)
     info('Elapsed time:{}'.format(time.time()-t0))
 
