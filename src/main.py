@@ -116,7 +116,7 @@ def calculate_edge_len(g, srcid, tgtid):
     return np.linalg.norm(tgt - src)
 
 ##########################################################
-def add_edge(g, srcid, tgtid, eid):
+def add_wedge(g, srcid, tgtid, eid):
     g.add_edge(srcid, tgtid, type=eid)
     g.es[g.ecount() - 1]['length'] = calculate_edge_len(g, srcid, tgtid)
     return g
@@ -147,13 +147,13 @@ def add_detour_route(g, edge, origtree, spacing, nnearest):
  
         for i, id in enumerate(ids):
             if orig[id] != srcid and orig[id] != tgtid:
-                g = add_edge(g, vlast, orig[id], BRIDGEACC)
+                g = add_wedge(g, vlast, orig[id], BRIDGEACC)
                 break
 
         vlast = id
         d += spacing
 
-    return add_edge(g, vlast, tgtid, BRIDGEACC)
+    return add_wedge(g, vlast, tgtid, BRIDGEACC)
 
 ##########################################################
 def add_bridge(g, edge, origtree, spacing, nnearest):
@@ -168,30 +168,26 @@ def add_bridge(g, edge, origtree, spacing, nnearest):
     vnorm = np.linalg.norm(v)
     versor = v / vnorm
 
-    d = spacing
-
     lastpid = srcid
-    vlast = srcid
-    while d < vnorm:
+    for d in np.arange(spacing, vnorm, spacing):
         p = src + versor * d
-        params = {'type':BRIDGEACC, 'x':p[0], 'y':p[1]}
+        params = {'type': BRIDGEACC, 'x': p[0], 'y': p[1]}
         g.add_vertex(p, **params) # new vertex in the bridge
-        
         newvid = g.vcount() - 1
-        g = add_edge(g, lastpid, newvid, BRIDGE)
-        vlast = g.vcount() - 1
-        g.vs[vlast]['x'] = p[0]
-        g.vs[vlast]['y'] = p[1]
+        g = add_wedge(g, lastpid, newvid, BRIDGE)
+        g.vs[newvid]['x'] = p[0]
+        g.vs[newvid]['y'] = p[1]
         _, ids = origtree.query(p, nnearest + 2)
  
         for i, id in enumerate(ids): # create accesses
             if i >= nnearest: break
             if orig[id] == srcid or orig[id] == tgtid: continue
-            g = add_edge(g, vlast, orig[id], BRIDGEACC)
+            g = add_wedge(g, newvid, orig[id], BRIDGEACC)
 
-        d += spacing
+        lastpid = newvid
 
-    g = add_edge(g, lastpid, tgtid, BRIDGE)
+    g = add_wedge(g, lastpid, tgtid, BRIDGE)
+    return g
 
 ##########################################################
 def partition_edges(g, es, spacing, nnearest=1):
@@ -206,8 +202,9 @@ def partition_edges(g, es, spacing, nnearest=1):
     origtree = cKDTree(coords)
 
     for edge in es:
-        add_bridge(g, edge, origtree, spacing, nnearest)
+        g = add_bridge(g, edge, origtree, spacing, nnearest)
         # add_detour_route(g, edge, origtree, spacing, nnearest)
+        
     return g
        
 ##########################################################
@@ -268,12 +265,11 @@ def analyze_increment_of_random_edges(g, nnewedges, spacing, outcsv):
 
         k = g.ecount()
         g = partition_edges(g, es, spacing, nnearest=1)
-
         etypes = np.array(g.es['type'])
         
         meanw, stdw = calculate_avg_path_length(g,
                 weighted=True,
-                srctgttypes=None,)
+                srctgttypes=ORIGINAL,)
         
         bv = g.betweenness()
         betwvmean, betwvstd = np.mean(bv), np.std(bv)
@@ -300,7 +296,7 @@ def hex2rgb(hexcolours, normalized=False, alpha=None):
     if alpha != None:
         aux = np.zeros((len(hexcolours), 4), dtype=float)
         aux[:, :3] = rgbcolours / 255
-        aux[:, -1] = .7 # alpha
+        aux[:, -1] = alpha # alpha
         rgbcolours = aux
     elif normalized:
         rgbcolours = rgbcolours.astype(float) / 255
@@ -321,7 +317,7 @@ def plot_map(g, outdir, vertices=False):
     
     ne = g.ecount()
     palettehex = plt.rcParams['axes.prop_cycle'].by_key()['color']
-    palettergb = hex2rgb(palettehex, normalized=True, alpha=0.6)
+    palettergb = hex2rgb(palettehex, normalized=True, alpha=0.7)
 
     ecolours = [ palettergb[i, :] for i in g.es['type']]
 
@@ -336,7 +332,6 @@ def plot_map(g, outdir, vertices=False):
     axs[0, 0].add_collection(lc)
     axs[0, 0].autoscale()
 
-    
     coords = np.array([[float(x), float(y)] for x, y in zip(g.vs['x'], g.vs['y'])])
 
     if vertices:
