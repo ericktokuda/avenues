@@ -21,6 +21,7 @@ import pickle
 import pandas as pd
 from scipy.spatial import cKDTree
 from enum import Enum
+from itertools import combinations
 
 HOME = os.getenv('HOME')
 
@@ -165,6 +166,7 @@ def add_bridge(g, edge, origtree, spacing, nnearest):
     info(inspect.stack()[0][3] + '()')
     orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0]
     coords = origtree.data
+
     srcid, tgtid = edge
     src = coords[srcid]
     tgt = coords[tgtid]
@@ -194,20 +196,22 @@ def add_bridge(g, edge, origtree, spacing, nnearest):
     return g
 
 ##########################################################
-def partition_edges(g, es, spacing, nnearest=1):
+def partition_edges(g, endpoints, spacing, nnearest=1):
     """Partition bridges spaced by @spacing and each new vertex is connected to
     the nearest node
     """
     # info(inspect.stack()[0][3] + '()')
 
-    orig = list(np.where(np.array(g.vs['type']) != BRIDGEACC)[0])
+    vtypes = np.array(g.vs['type'])
+    xs = np.array(g.vs['x'])
+    ys = np.array(g.vs['y'])
+    orig = list(np.where(vtypes != BRIDGEACC)[0])
 
-    coords = [[x, y] for x, y in zip(g.vs[orig]['x'], g.vs[orig]['y'])]
+    coords = [[float(xs[i]), float(ys[i])] for i in orig]
+
     origtree = cKDTree(coords)
-
-    for edge in es:
-        g = add_bridge(g, edge, origtree, spacing, nnearest)
-        # add_detour_route(g, edge, origtree, spacing, nnearest)
+    g = add_bridge(g, endpoints, origtree, spacing, nnearest)
+    # add_detour_route(g, endpoints, origtree, spacing, nnearest)
         
     return g
        
@@ -266,9 +270,8 @@ def extract_features(g, nbridges):
         meanw, stdw, betwvmean, betwvstd,
         ]
 ##########################################################
-def analyze_increment_of_random_edges(g, nbridges, spacing, outcsv):
-    """Analyze random increment of n edges to @g for each value n in @nnewedges
-    """
+def analyze_increment_of_random_edges(g, bridges, spacing, outcsv):
+    """Analyze increment of @bridges to @g"""
     info(inspect.stack()[0][3] + '()')
 
     g.es['type'] = ORIGINAL
@@ -276,13 +279,13 @@ def analyze_increment_of_random_edges(g, nbridges, spacing, outcsv):
 
     data = []
     data.append(extract_features(g, 0))
+    nbridges = len(bridges)
 
     for i in range(1, nbridges + 1):
         info('bridgeid:{}'.format(i))
-        es = choose_bridge_endpoints(g)
-
-        g.vs[es[0][0]]['type'] = BRIDGE
-        g.vs[es[0][1]]['type'] = BRIDGE
+        es = bridges[i-1]
+        g.vs[es[0]]['type'] = BRIDGE
+        g.vs[es[1]]['type'] = BRIDGE
         g = partition_edges(g, es, spacing, nnearest=1)
         data.append(extract_features(g, i))
 
@@ -351,6 +354,25 @@ def plot_map(g, outdir, vertices=False):
     plt.savefig(pjoin(outdir, 'map.pdf'))
 
 ##########################################################
+def choose_new_edges(g, nnewedges):
+    """Randomly choose new edges. Multiple edges are not allowed"""
+    info(inspect.stack()[0][3] + '()')
+
+    all = set(list(combinations(np.arange(g.vcount()), 2)))
+    es = [[e.source, e.target] for e in list(g.es)]
+
+    if not g.is_directed():
+        y0 = np.min(es, axis=1).reshape(-1, 1)
+        y1 = np.max(es, axis=1).reshape(-1, 1)
+        es = np.concatenate([y0, y1], axis=1)
+    es = set([(e[0], e[1]) for e in es]) # For faster checks
+
+    available = np.array(list(all.difference(es)))
+    inds = np.random.randint(len(available), size=nnewedges) # random
+
+    return available[inds]
+
+##########################################################
 def main():
     info(inspect.stack()[0][3] + '()')
     t0 = time.time()
@@ -371,15 +393,16 @@ def main():
     outpklpath = pjoin(args.outdir, 'finalgraph.pkl')
     nnewedges = args.nedges
     maxnedges = np.max(nnewedges)
-    spacing = 0.01
 
     g = parse_graphml(args.graphml, args.outdir, undir=True,
             samplerad=args.samplerad)
+    spacing = np.mean(g.es['length']) * 10
 
     info('nvertices: {}'.format(g.vcount()))
     info('nedges: {}'.format(g.ecount()))
 
-    g = analyze_increment_of_random_edges(g, nnewedges, spacing, outcsv)
+    es = choose_new_edges(g, nnewedges)
+    g = analyze_increment_of_random_edges(g, es, spacing, outcsv)
 
     pickle.dump(g, open(outpklpath, 'wb'))
 
