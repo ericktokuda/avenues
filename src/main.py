@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""Analysis of shortest paths in cities
-We do not consider REAL distances, but difference in lat,lon
-"""
+"""Analysis of shortest paths in cities as we include shortcut connections"""
 
 import argparse
 import time
@@ -22,57 +20,33 @@ import pandas as pd
 from scipy.spatial import cKDTree
 from enum import Enum
 from itertools import combinations
-
-HOME = os.getenv('HOME')
+from myutils import info, graph, plot
 
 ORIGINAL = 0
 BRIDGE = 1
 BRIDGEACC = 2
 
-#############################################################
-def info(*args):
-    pref = datetime.now().strftime('[%y%m%d %H:%M:%S]')
-    print(pref, *args, file=sys.stdout)
-
 ##########################################################
-def parse_graphml(graphmlpath, cachedir, undir=True, samplerad=-1):
+def parse_graphml(graphmlpath, undir=True, samplerad=-1):
     """Read graphml file to igraph object and dump it to @pklpath
     It gets the major component, and simplify it (neither multi nor self loops)
     Receives the input path @graphmlpath and dump to @pklpath.
-    Assumes vertex attribs 'x' and 'y' are available
-    """
+    Assumes vertex attribs 'x' and 'y' are available """
     info(inspect.stack()[0][3] + '()')
 
-    f = os.path.splitext(os.path.basename(graphmlpath))[0]
-    if samplerad > -1: f += '_rad{}'.format(samplerad)
-    pklpath = pjoin(cachedir, f + '.pkl')
-
-    if os.path.exists(pklpath):
-        info('Loading existing file: {}'.format(pklpath))
-        return pickle.load(open(pklpath, 'rb'))
-
-    g = igraph.Graph.Read(graphmlpath)
-    g.simplify()
-
-    if undir: g.to_undirected()
-
+    g = graph.get_largest_component_from_file(graphmlpath)
     g = sample_circle_from_graph(g, samplerad)
-
     g = g.components(mode='weak').giant()
-    g['origvcount'] = g.vcount()
-    info('g.is_connected():{}'.format(g.is_connected()))
 
-    g = add_lengths(g)
+    g['origvcount'] = g.vcount()
     g.vs['type'] = ORIGINAL
     g.es['type'] = ORIGINAL
     g.es['bridgeid'] = -1
-    pickle.dump(g, open(pklpath, 'wb'))
     return g
 
 ##########################################################
 def sample_circle_from_graph(g, radius):
-    """Sample a random region from the graph
-    """
+    """Sample a random region from the graph """
     info(inspect.stack()[0][3] + '()')
     
     if radius < 0: return g
@@ -86,8 +60,7 @@ def sample_circle_from_graph(g, radius):
 
 ##########################################################
 def get_points_inside_region(coords, c0, radius):
-    """Get points from @df within circle of center @c0 and @radius
-    """
+    """Get points from @df within circle of center @c0 and @radius"""
     info(inspect.stack()[0][3] + '()')
 
     kdtree = cKDTree(coords)
@@ -119,10 +92,12 @@ def calculate_edge_len(g, srcid, tgtid):
     return np.linalg.norm(tgt - src)
 
 ##########################################################
-def add_wedge(g, srcid, tgtid, eid, bridgeid=-1):
-    g.add_edge(srcid, tgtid, type=eid)
+def add_wedge(g, srcid, tgtid, etype, bridgeid=-1):
+    g.add_edge(srcid, tgtid, type=etype)
     eid = g.ecount() - 1
-    g.es[eid]['length'] = calculate_edge_len(g, srcid, tgtid)
+    lon1, lat1 = float(g.vs[srcid]['x']), float(g.vs[srcid]['y'])
+    lon2, lat2 = float(g.vs[tgtid]['x']), float(g.vs[tgtid]['y'])
+    g.es[eid]['length'] = graph.haversine(lon1, lat1, lon2, lat2)
     g.es[eid]['bridgeid'] = bridgeid
     return g
 
@@ -198,8 +173,7 @@ def add_bridge(g, edge, origtree, spacing, nnearest):
 ##########################################################
 def partition_edges(g, endpoints, spacing, nnearest=1):
     """Partition bridges spaced by @spacing and each new vertex is connected to
-    the nearest node
-    """
+    the nearest node """
     # info(inspect.stack()[0][3] + '()')
 
     vtypes = np.array(g.vs['type'])
@@ -215,15 +189,6 @@ def partition_edges(g, endpoints, spacing, nnearest=1):
         
     return g
        
-##########################################################
-def add_lengths(g):
-    """Add lengths to the graph """
-    info(inspect.stack()[0][3] + '()')
-    for i, e in enumerate(g.es()):
-        srcid, tgtid = e.source, e.target
-        g.es[i]['length'] = calculate_edge_len(g, srcid, tgtid)
-    return g
-
 ##########################################################
 def calculate_avg_path_length(g, weighted=False, srctgttypes=None):
     """Calculate avg path length of @g.
@@ -270,7 +235,7 @@ def extract_features(g, nbridges):
         meanw, stdw, betwvmean, betwvstd,
         ]
 ##########################################################
-def analyze_increment_of_random_edges(g, bridges, spacing, outcsv):
+def analyze_increment_of_edges(g, bridges, spacing, outcsv):
     """Analyze increment of @bridges to @g"""
     info(inspect.stack()[0][3] + '()')
 
@@ -298,25 +263,8 @@ def analyze_increment_of_random_edges(g, bridges, spacing, outcsv):
     return g
 
 ##########################################################
-def hex2rgb(hexcolours, normalized=False, alpha=None):
-    rgbcolours = np.zeros((len(hexcolours), 3), dtype=int)
-    for i, h in enumerate(hexcolours):
-        rgbcolours[i, :] = np.array([int(h.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)])
-
-    if alpha != None:
-        aux = np.zeros((len(hexcolours), 4), dtype=float)
-        aux[:, :3] = rgbcolours / 255
-        aux[:, -1] = alpha # alpha
-        rgbcolours = aux
-    elif normalized:
-        rgbcolours = rgbcolours.astype(float) / 255
-
-    return rgbcolours
-
-##########################################################
 def plot_map(g, outdir, vertices=False):
-    """Plot map g, according to 'type' attrib both in vertices and in edges
-    """
+    """Plot map g, according to 'type' attrib both in vertices and in edges """
     
     info(inspect.stack()[0][3] + '()')
     nrows = 1;  ncols = 1
@@ -327,7 +275,7 @@ def plot_map(g, outdir, vertices=False):
     
     ne = g.ecount()
     palettehex = plt.rcParams['axes.prop_cycle'].by_key()['color']
-    palettergb = hex2rgb(palettehex, normalized=True, alpha=0.7)
+    palettergb = plot.hex2rgb(palettehex, normalize=True, alpha=0.7)
 
     ecolours = [ palettergb[i, :] for i in g.es['type']]
 
@@ -381,8 +329,8 @@ def main():
             help='Path to the map in graphml')
     parser.add_argument('--samplerad', default=-1, type=float,
             help='Sample radius')
-    parser.add_argument('--nedges', default=1, type=int,
-            help='Sample radius')
+    parser.add_argument('--nbridges', default=1, type=int,
+            help='Number of shortcut connections')
     parser.add_argument('--outdir', default='/tmp/out/', help='Output directory')
     args = parser.parse_args()
 
@@ -391,18 +339,16 @@ def main():
     np.random.seed(0)
     outcsv = pjoin(args.outdir, 'results.csv')
     outpklpath = pjoin(args.outdir, 'finalgraph.pkl')
-    nnewedges = args.nedges
-    maxnedges = np.max(nnewedges)
+    maxnedges = np.max(args.nbridges)
 
-    g = parse_graphml(args.graphml, args.outdir, undir=True,
-            samplerad=args.samplerad)
+    g = parse_graphml(args.graphml, undir=True, samplerad=args.samplerad)
     spacing = np.mean(g.es['length']) * 10
 
     info('nvertices: {}'.format(g.vcount()))
     info('nedges: {}'.format(g.ecount()))
 
-    es = choose_new_edges(g, nnewedges)
-    g = analyze_increment_of_random_edges(g, es, spacing, outcsv)
+    es = choose_new_edges(g, args.nbridges)
+    g = analyze_increment_of_edges(g, es, spacing, outcsv)
 
     pickle.dump(g, open(outpklpath, 'wb'))
 
