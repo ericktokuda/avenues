@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Analysis of shortest paths in cities as we include shortcut connections"""
+"""Analysis of shortest paths in cities as we include shortcut connections.
+We expect a network in graphml format with x,y attributes representing lon, lat
+and we incrementally add bridges (or detour routes) and calculate the
+shortest path lengths."""
 
 import argparse
 import time
@@ -7,18 +10,15 @@ import os
 from os.path import join as pjoin
 import inspect
 
-import sys
 import numpy as np
 from itertools import product
 import matplotlib; matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from datetime import datetime
-import igraph
 import matplotlib.collections as mc
+import igraph
 import pickle
 import pandas as pd
 from scipy.spatial import cKDTree
-from enum import Enum
 from itertools import combinations
 from myutils import info, graph, plot
 
@@ -68,23 +68,6 @@ def get_points_inside_region(coords, c0, radius):
     return sorted(inds)
 
 ##########################################################
-def choose_bridge_endpoints(g):
-    """Add @nnewedges to @g """
-    # info(inspect.stack()[0][3] + '()')
-    orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0]
-
-    nvertices = len(orig)
-
-    maxntries = 50
-    for i in range(maxntries):
-        s, t = np.random.randint(nvertices, size=2)
-        if orig[t] not in g.neighbors(orig[s]):
-            return np.array([[orig[s], orig[t]]])
-
-    raise Exception('Too many tries on choosing a new edge\n' \
-            'The graph is almost complete (v:{} e:{}) .'.format(g.vcount(), g.ecount()))
-
-##########################################################
 def calculate_edge_len(g, srcid, tgtid):
     """Calculate edge length based on 'x' and 'y' attributes"""
     src = np.array([float(g.vs[srcid]['x']), float(g.vs[srcid]['y'])])
@@ -103,8 +86,8 @@ def add_wedge(g, srcid, tgtid, etype, bridgeid=-1):
 
 ##########################################################
 def add_detour_route(g, edge, origtree, spacing, nnearest):
-    """Add shortcut path etween @edge vertices"""
-    # info(inspect.stack()[0][3] + '()')
+    """Add shortcut path between @edge vertices"""
+    info(inspect.stack()[0][3] + '()')
     orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0]
     coords = origtree.data
     srcid, tgtid = edge
@@ -121,9 +104,8 @@ def add_detour_route(g, edge, origtree, spacing, nnearest):
     nnewedges = 0
 
     while d < vnorm:
-
-        p = src + versor * d
-        _, ids = origtree.query(p, 3) # in the worst case, the 2 first are the src and tgt
+        p = src + versor * d # in the worst case,
+        _, ids = origtree.query(p, 3) # the 2 first are the src and tgt
  
         for i, id in enumerate(ids):
             if orig[id] != srcid and orig[id] != tgtid:
@@ -232,11 +214,11 @@ def extract_features(g, nbridges):
 
     return [g.vcount(), g.ecount(),
         nbridges, len(np.where(etypes == BRIDGEACC)[0]),
-        meanw, stdw, betwvmean, betwvstd,
-        ]
+        meanw, stdw, betwvmean, betwvstd,]
 ##########################################################
-def analyze_increment_of_edges(g, bridges, spacing, outcsv):
-    """Analyze increment of @bridges to @g"""
+def analyze_increment_of_bridges(g, bridges, spacing, outcsv):
+    """Analyze increment of @bridges to @g. We add entrances/exit spaced
+    by @spacing and output to @outcsv."""
     info(inspect.stack()[0][3] + '()')
 
     g.es['type'] = ORIGINAL
@@ -302,7 +284,7 @@ def plot_map(g, outdir, vertices=False):
     plt.savefig(pjoin(outdir, 'map.pdf'))
 
 ##########################################################
-def choose_new_edges(g, nnewedges):
+def choose_new_bridges(g, nnewedges):
     """Randomly choose new edges. Multiple edges are not allowed"""
     info(inspect.stack()[0][3] + '()')
 
@@ -347,8 +329,8 @@ def main():
     info('nvertices: {}'.format(g.vcount()))
     info('nedges: {}'.format(g.ecount()))
 
-    es = choose_new_edges(g, args.nbridges)
-    g = analyze_increment_of_edges(g, es, spacing, outcsv)
+    es = choose_new_bridges(g, args.nbridges)
+    g = analyze_increment_of_bridges(g, es, spacing, outcsv)
 
     pickle.dump(g, open(outpklpath, 'wb'))
 
