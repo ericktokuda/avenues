@@ -402,7 +402,7 @@ def main():
     outpklpath = pjoin(args.outdir, 'finalgraph.pkl')
     maxnedges = np.max(args.nbridges)
 
-    minlen = .5
+    minlen = 1
     spacing = .2
     scale = .5
 
