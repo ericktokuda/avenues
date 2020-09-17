@@ -20,7 +20,8 @@ import pickle
 import pandas as pd
 from scipy.spatial import cKDTree
 from itertools import combinations
-from myutils import info, graph, plot
+from myutils import info, graph, plot, geo
+from sklearn.neighbors import BallTree
 
 ORIGINAL = 0
 BRIDGE = 1
@@ -34,14 +35,23 @@ def parse_graphml(graphmlpath, undir=True, samplerad=-1):
     Assumes vertex attribs 'x' and 'y' are available """
     info(inspect.stack()[0][3] + '()')
 
-    g = graph.get_largest_component_from_file(graphmlpath)
+    g = graph.simplify_graphml(graphmlpath, directed=False)
     g = sample_circle_from_graph(g, samplerad)
     g = g.components(mode='weak').giant()
 
     g['origvcount'] = g.vcount()
+
     g.vs['type'] = ORIGINAL
     g.es['type'] = ORIGINAL
     g.es['bridgeid'] = -1
+    return g
+
+##########################################################
+def induced_by(gorig, vs):
+    g = gorig.copy()
+    todel = np.ones(g.vcount(), bool)
+    todel[vs] = False
+    g.delete_vertices(np.where(todel == True)[0])
     return g
 
 ##########################################################
@@ -53,19 +63,18 @@ def sample_circle_from_graph(g, radius):
     coords = [(x, y) for x, y in zip(g.vs['x'], g.vs['y'])]
     c0 = coords[np.random.randint(g.vcount())]
     ids = get_points_inside_region(coords, c0, radius)
-    todel = np.ones(g.vcount(), bool)
-    todel[ids] = False
-    g.delete_vertices(np.where(todel == True)[0])
-    return g
+    return induced_by(g, ids)
 
 ##########################################################
 def get_points_inside_region(coords, c0, radius):
     """Get points from @df within circle of center @c0 and @radius"""
     info(inspect.stack()[0][3] + '()')
 
-    kdtree = cKDTree(coords)
-    inds = kdtree.query_ball_point(c0, radius)
-    return sorted(inds)
+    bt = BallTree(np.deg2rad(coords), metric='haversine')
+    center = np.deg2rad(np.array([c0]))
+    inds, dists = bt.query_radius(center, radius / geo.R,
+            return_distance=True, sort_results=True)
+    return inds[0]
 
 ##########################################################
 def calculate_edge_len(g, srcid, tgtid):
@@ -80,7 +89,7 @@ def add_wedge(g, srcid, tgtid, etype, bridgeid=-1):
     eid = g.ecount() - 1
     lon1, lat1 = float(g.vs[srcid]['x']), float(g.vs[srcid]['y'])
     lon2, lat2 = float(g.vs[tgtid]['x']), float(g.vs[tgtid]['y'])
-    g.es[eid]['length'] = graph.haversine(lon1, lat1, lon2, lat2)
+    g.es[eid]['length'] = geo.haversine(lon1, lat1, lon2, lat2)
     g.es[eid]['bridgeid'] = bridgeid
     return g
 
@@ -93,8 +102,7 @@ def add_detour_route(g, edge, origtree, spacing, nnearest):
     srcid, tgtid = edge
     src = coords[srcid]
     tgt = coords[tgtid]
-    v = tgt - src
-    vnorm = np.linalg.norm(v)
+    vnorm = geo.haversine(src[0], src[1], tgt[0], tgt[1])
     versor = v / vnorm
 
     d = spacing
@@ -128,10 +136,11 @@ def add_bridge(g, edge, origtree, spacing, nnearest):
     src = coords[srcid]
     tgt = coords[tgtid]
     v = tgt - src
-    vnorm = np.linalg.norm(v)
+    vnorm = geo.haversine(src[0], src[1], tgt[0], tgt[1])
     versor = v / vnorm
 
     lastpid = srcid
+    
     for d in np.arange(spacing, vnorm, spacing):
         p = src + versor * d
         params = {'type': BRIDGEACC, 'x': p[0], 'y': p[1]}
@@ -179,7 +188,9 @@ def calculate_avg_path_length(g, weighted=False, srctgttypes=None):
     # info(inspect.stack()[0][3] + '()')
 
     if g.is_directed():
-        raise Exception('This method considers an undirected graph')
+        raise Exception('This method considers an *undirected* graph')
+    elif g.vcount() < 2: return 0, 0
+
 
     weights = g.es['length'] if weighted else np.array([1] * g.ecount())
 
@@ -202,9 +213,30 @@ def calculate_avg_path_length(g, weighted=False, srctgttypes=None):
     return distmean, diststd
 
 ##########################################################
-def extract_features(g, nbridges):
+def calculate_local_avgpathlen(g, scale, weighted, srctgttypes):
+    """Average path length in a small ball with radius given by @scale"""
+    # info(inspect.stack()[0][3] + '()')
+
+    coords = np.array([[x, y] for x, y in zip(g.vs['x'], g.vs['y'])])
+    bt = BallTree(np.deg2rad(coords), metric='haversine')
+    inds, dists = bt.query_radius(np.deg2rad(coords), scale / geo.R,
+            return_distance=True, sort_results=True)
+    
+
+    meanw = np.zeros(g.vcount(), dtype=float)
+    # stdw = np.zeros(g.vcount(), dtype=float)
+
+    for i in range(g.vcount()):
+        induced = induced_by(g, inds[i])
+        induced = induced.components(mode='weak').giant()
+        meanw[i], _ = calculate_avg_path_length(induced, weighted=True,
+                srctgttypes=[ORIGINAL, BRIDGE],)
+    return np.mean(meanw), np.std(meanw)
+
+##########################################################
+def extract_features(g, scale, nbridges):
     """Extract features from graph @g """
-    info(inspect.stack()[0][3] + '()')
+    # info(inspect.stack()[0][3] + '()')
     etypes = np.array(g.es['type'])
     meanw, stdw = calculate_avg_path_length(g, weighted=True,
             srctgttypes=[ORIGINAL, BRIDGE],)
@@ -212,11 +244,15 @@ def extract_features(g, nbridges):
     bv = g.betweenness()
     betwvmean, betwvstd = np.mean(bv), np.std(bv)
 
+    meanlw, stdlw = calculate_local_avgpathlen(g, scale, weighted=True,
+            srctgttypes=[ORIGINAL, BRIDGE],)
+    
     return [g.vcount(), g.ecount(),
         nbridges, len(np.where(etypes == BRIDGEACC)[0]),
-        meanw, stdw, betwvmean, betwvstd,]
+        meanw, stdw, betwvmean, betwvstd, meanlw, stdlw]
+
 ##########################################################
-def analyze_increment_of_bridges(g, bridges, spacing, outcsv):
+def analyze_increment_of_bridges(g, bridges, spacing, scale, outcsv):
     """Analyze increment of @bridges to @g. We add entrances/exit spaced
     by @spacing and output to @outcsv."""
     info(inspect.stack()[0][3] + '()')
@@ -225,7 +261,8 @@ def analyze_increment_of_bridges(g, bridges, spacing, outcsv):
     prev = 0
 
     data = []
-    data.append(extract_features(g, 0))
+
+    data.append(extract_features(g, scale, 0))
     nbridges = len(bridges)
 
     for i in range(1, nbridges + 1):
@@ -234,10 +271,11 @@ def analyze_increment_of_bridges(g, bridges, spacing, outcsv):
         g.vs[es[0]]['type'] = BRIDGE
         g.vs[es[1]]['type'] = BRIDGE
         g = partition_edges(g, es, spacing, nnearest=1)
-        data.append(extract_features(g, i))
+        data.append(extract_features(g, scale, i))
 
     cols = 'nvertices,nedges,nbridges,naccess,' \
-            'avgpathlen,stdpathlen,betwvmean,betwvstd'.\
+            'avgpathlen,stdpathlen,betwvmean,betwvstd,' \
+            'lavgpathlen,lstdpathlen'.\
             split(',')
     df = pd.DataFrame(data, columns=cols)
     df.to_csv(outcsv, index=False)
@@ -284,8 +322,47 @@ def plot_map(g, outdir, vertices=False):
     plt.savefig(pjoin(outdir, 'map.pdf'))
 
 ##########################################################
-def choose_new_bridges(g, nnewedges):
-    """Randomly choose new edges. Multiple edges are not allowed"""
+def choose_bridges_random(g, nnewedges, available):
+    inds = np.random.randint(len(available), size=nnewedges) # random
+    return available[inds]
+
+##########################################################
+def choose_bridges_random_minlen(g, nnewedges, available, coords, minlen):
+    inds = np.arange(len(available))
+    np.random.shuffle(inds)
+
+    bridges = []
+    for ind in inds:
+        srcid, tgtid = available[ind]
+        l = geo.haversine(coords[srcid][0], coords[srcid][1],
+                coords[tgtid][0], coords[tgtid][1])
+        
+        if l > minlen: bridges.append(available[ind])
+        if len(bridges) == nnewedges: break
+
+    return bridges
+
+##########################################################
+def choose_bridges_acc(g, nnewedges, available):
+    accpath = '/home/frodo/results/bridges/20200729-accessibs/sp_undirected_acc05.txt'
+    acc = [float(x) for x in open(accpath).read().strip().split('\n')]
+    g.vs['acc'] = acc
+    aux = np.argsort(g.vs['acc']) # accessibility
+    quant = int(g.vcount() * .25)
+    if quant < 2*nnewedges: quant *= 2
+    srcs = aux[:quant]
+    tgts = aux[-quant:]
+
+    bridges = []
+    for i in range(quant):
+        if len(bridges) == nnewedges: return bridges
+        if [srcs[i], tgts[i]] not in available: continue
+        bridges.append([srcs[i], tgts[i]])
+    return bridges
+
+##########################################################
+def choose_new_bridges(g, nnewedges, minlen=-1):
+    """Choose new edges. Multiple edges are not allowed"""
     info(inspect.stack()[0][3] + '()')
 
     all = set(list(combinations(np.arange(g.vcount()), 2)))
@@ -298,9 +375,11 @@ def choose_new_bridges(g, nnewedges):
     es = set([(e[0], e[1]) for e in es]) # For faster checks
 
     available = np.array(list(all.difference(es)))
-    inds = np.random.randint(len(available), size=nnewedges) # random
+    # return choose_bridges_acc(g, available)
+    # return choose_bridges_random(g, nnewedges, available)
 
-    return available[inds]
+    coords = [(x, y) for x, y in zip(g.vs['x'], g.vs['y'])]
+    return choose_bridges_random_minlen(g, nnewedges, available, coords, minlen)
 
 ##########################################################
 def main():
@@ -323,14 +402,17 @@ def main():
     outpklpath = pjoin(args.outdir, 'finalgraph.pkl')
     maxnedges = np.max(args.nbridges)
 
-    g = parse_graphml(args.graphml, undir=True, samplerad=args.samplerad)
-    spacing = np.mean(g.es['length']) * 10
+    minlen = .5
+    spacing = .2
+    scale = .5
 
+    g = parse_graphml(args.graphml, undir=True, samplerad=args.samplerad)
+    
     info('nvertices: {}'.format(g.vcount()))
     info('nedges: {}'.format(g.ecount()))
 
-    es = choose_new_bridges(g, args.nbridges)
-    g = analyze_increment_of_bridges(g, es, spacing, outcsv)
+    es = choose_new_bridges(g, args.nbridges, minlen)
+    g = analyze_increment_of_bridges(g, es, spacing, scale, outcsv)
 
     pickle.dump(g, open(outpklpath, 'wb'))
 
