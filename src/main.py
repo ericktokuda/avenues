@@ -233,8 +233,31 @@ def calculate_local_avgpathlen(g, scale, weighted, srctgttypes):
                 srctgttypes=[ORIGINAL, BRIDGE],)
     return np.mean(meanw), np.std(meanw)
 
+
 ##########################################################
-def extract_features(g, scale, nbridges):
+def calculate_local_avgpathlen2(g, refvids, scale, weighted, srctgttypes):
+    """Average path length in a small ball with radius given by @scale"""
+    # info(inspect.stack()[0][3] + '()')
+
+    coords = np.array([[x, y] for x, y in zip(g.vs['x'], g.vs['y'])])
+
+    meanw = np.zeros(len(refvids), dtype=float)
+    # stdw = np.zeros(g.vcount(), dtype=float)
+
+    for i, vid in enumerate(refvids):
+        bt = BallTree(np.deg2rad(coords), metric='haversine')
+        c0 = np.array([coords[vid, :]])
+        inds,_ = bt.query_radius(np.deg2rad(c0), scale / geo.R,
+                return_distance=True, sort_results=True)
+        induced = induced_by(g, inds[0])
+        induced = induced.components(mode='weak').giant()
+        meanw[i], _ = calculate_avg_path_length(induced, weighted=True,
+                srctgttypes=[ORIGINAL, BRIDGE],)
+
+    return meanw[0], meanw[1]
+##########################################################
+# def extract_features(g, scale, nbridges):
+def extract_features(g, refvids, scale, nbridges):
     """Extract features from graph @g """
     # info(inspect.stack()[0][3] + '()')
     etypes = np.array(g.es['type'])
@@ -244,12 +267,19 @@ def extract_features(g, scale, nbridges):
     bv = g.betweenness()
     betwvmean, betwvstd = np.mean(bv), np.std(bv)
 
-    meanlw, stdlw = calculate_local_avgpathlen(g, scale, weighted=True,
+    # meanlw, stdlw = calculate_local_avgpathlen(g, scale, weighted=True,
+            # srctgttypes=[ORIGINAL, BRIDGE],)
+
+    meanlw0, meanlw1 = calculate_local_avgpathlen2(g, refvids, scale, weighted=True,
             srctgttypes=[ORIGINAL, BRIDGE],)
     
+    # return [g.vcount(), g.ecount(),
+        # nbridges, len(np.where(etypes == BRIDGEACC)[0]),
+        # meanw, stdw, betwvmean, betwvstd, meanlw, stdlw]
+
     return [g.vcount(), g.ecount(),
         nbridges, len(np.where(etypes == BRIDGEACC)[0]),
-        meanw, stdw, betwvmean, betwvstd, meanlw, stdlw]
+        meanw, stdw, betwvmean, betwvstd, meanlw0, meanlw1]
 
 ##########################################################
 def analyze_increment_of_bridges(g, bridges, spacing, scale, outcsv):
@@ -262,7 +292,9 @@ def analyze_increment_of_bridges(g, bridges, spacing, scale, outcsv):
 
     data = []
 
-    data.append(extract_features(g, scale, 0))
+    refvids = np.random.permutation(g.vcount())[:2]
+    info('refvids:{}'.format(refvids))
+    data.append(extract_features(g, refvids, scale, 0))
     nbridges = len(bridges)
 
     for i in range(1, nbridges + 1):
@@ -271,11 +303,15 @@ def analyze_increment_of_bridges(g, bridges, spacing, scale, outcsv):
         g.vs[es[0]]['type'] = BRIDGE
         g.vs[es[1]]['type'] = BRIDGE
         g = partition_edges(g, es, spacing, nnearest=1)
-        data.append(extract_features(g, scale, i))
+        data.append(extract_features(g, refvids, scale, i))
 
+    # cols = 'nvertices,nedges,nbridges,naccess,' \
+            # 'avgpathlen,stdpathlen,betwvmean,betwvstd,' \
+            # 'lavgpathlen,lstdpathlen'.\
+            # split(',')
     cols = 'nvertices,nedges,nbridges,naccess,' \
             'avgpathlen,stdpathlen,betwvmean,betwvstd,' \
-            'lavgpathlen,lstdpathlen'.\
+            'lavgpathlen0,lavgpathlen1'.\
             split(',')
     df = pd.DataFrame(data, columns=cols)
     df.to_csv(outcsv, index=False)
@@ -318,6 +354,8 @@ def plot_map(g, outdir, vertices=False):
 
     vids = np.where(np.array(g.vs['type']) == BRIDGE)[0]
     axs[0, 0].scatter(coords[vids, 0], coords[vids, 1], s=figscale*.1, c='k')
+    # axs[0, 0].set_xticks([])
+    # axs[0, 0].set_yticks([])
 
     plt.savefig(pjoin(outdir, 'map.pdf'))
 
