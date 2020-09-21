@@ -254,7 +254,7 @@ def calculate_local_avgpathlen2(g, refvids, scale, weighted, srctgttypes):
         meanw[i], _ = calculate_avg_path_length(induced, weighted=True,
                 srctgttypes=[ORIGINAL, BRIDGE],)
 
-    return meanw[0], meanw[1]
+    return meanw
 ##########################################################
 # def extract_features(g, scale, nbridges):
 def extract_features(g, refvids, scale, nbridges):
@@ -270,16 +270,17 @@ def extract_features(g, refvids, scale, nbridges):
     # meanlw, stdlw = calculate_local_avgpathlen(g, scale, weighted=True,
             # srctgttypes=[ORIGINAL, BRIDGE],)
 
-    meanlw0, meanlw1 = calculate_local_avgpathlen2(g, refvids, scale, weighted=True,
+    meanlws = calculate_local_avgpathlen2(g, refvids, scale, weighted=True,
             srctgttypes=[ORIGINAL, BRIDGE],)
     
     # return [g.vcount(), g.ecount(),
         # nbridges, len(np.where(etypes == BRIDGEACC)[0]),
         # meanw, stdw, betwvmean, betwvstd, meanlw, stdlw]
 
-    return [g.vcount(), g.ecount(),
+    ret = [g.vcount(), g.ecount(),
         nbridges, len(np.where(etypes == BRIDGEACC)[0]),
-        meanw, stdw, betwvmean, betwvstd, meanlw0, meanlw1]
+        meanw, stdw, betwvmean, betwvstd]
+    return ret + meanlws.tolist()
 
 ##########################################################
 def analyze_increment_of_bridges(g, bridges, spacing, scale, outcsv):
@@ -292,7 +293,9 @@ def analyze_increment_of_bridges(g, bridges, spacing, scale, outcsv):
 
     data = []
 
-    refvids = np.random.permutation(g.vcount())[:2]
+    nref = 30
+    refvids = np.random.permutation(g.vcount())[:nref]
+
     info('refvids:{}'.format(refvids))
     data.append(extract_features(g, refvids, scale, 0))
     nbridges = len(bridges)
@@ -309,10 +312,13 @@ def analyze_increment_of_bridges(g, bridges, spacing, scale, outcsv):
             # 'avgpathlen,stdpathlen,betwvmean,betwvstd,' \
             # 'lavgpathlen,lstdpathlen'.\
             # split(',')
+    
+    refstr = ','.join([ 'ref{:02d}'.format(j) for j in range(nref)])
     cols = 'nvertices,nedges,nbridges,naccess,' \
-            'avgpathlen,stdpathlen,betwvmean,betwvstd,' \
-            'lavgpathlen0,lavgpathlen1'.\
-            split(',')
+            'avgpathlen,stdpathlen,betwvmean,betwvstd,' + refstr
+    cols = cols.split(',')
+            # 'lavgpathlen0,lavgpathlen1'.\
+            # split(',')
     df = pd.DataFrame(data, columns=cols)
     df.to_csv(outcsv, index=False)
     info('df:{}'.format(df))
