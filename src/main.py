@@ -40,6 +40,7 @@ def parse_graphml(graphmlpath, undir=True, samplerad=-1):
     g = g.components(mode='weak').giant()
 
     g['origvcount'] = g.vcount()
+    g['origecount'] = g.ecount()
 
     g.vs['type'] = ORIGINAL
     g.es['type'] = ORIGINAL
@@ -181,11 +182,14 @@ def partition_edges(g, endpoints, spacing, nnearest=1):
     return g
        
 ##########################################################
-def calculate_avg_path_length(g, weighted=False, srctgttypes=None):
+def calculate_avg_path_length(g, weighted=False, srctgttypes=None, cached={}):
     """Calculate avg path length of @g.
     Calling all at once, without the loop on the vertices, it crashes
     for large graphs """
     # info(inspect.stack()[0][3] + '()')
+
+    # TODO: not using @cached yet
+    dists = {}
 
     if g.is_directed():
         raise Exception('This method considers an *undirected* graph')
@@ -201,16 +205,20 @@ def calculate_avg_path_length(g, weighted=False, srctgttypes=None):
         vids = np.nonzero(np.isin(np.array(g.vs['type']), srctgttypes))[0]
     
     for i, srcid in enumerate(range(len(vids))): #Assuming undirected graph
-        aux =  np.array(g.shortest_paths(source=vids[i], target=vids[i+1:],
+        s = vids[i]
+        aux =  np.array(g.shortest_paths(source=s, target=vids[i+1:],
             weights=g.es['length'], mode='ALL'))
+        for t, d in zip(vids[i+1:], aux[0]): # Notice that tgt > src
+            dists[(s, t)] = d
+        # dsum += np.sum(aux)
+        # d2sum += np.sum(np.square(aux))
 
-        dsum += np.sum(aux)
-        d2sum += np.sum(np.square(aux))
-
-    ndists = int((g.vcount() * (g.vcount()-1)) / 2) # diagonal
-    distmean = dsum / ndists
-    diststd = np.sqrt(( d2sum - (dsum**2)/ndists ) / ndists)
-    return distmean, diststd
+    # ndists = int((g.vcount() * (g.vcount()-1)) / 2) # diagonal
+    # distmean = dsum / ndists
+    # diststd = np.sqrt(( d2sum - (dsum**2)/ndists ) / ndists)
+    # return distmean, diststd
+    ds = np.array(list(dists.values()))
+    return dists, np.mean(ds), np.std(ds)
 
 ##########################################################
 def calculate_local_avgpathlen(g, scale, weighted, srctgttypes):
@@ -235,7 +243,8 @@ def calculate_local_avgpathlen(g, scale, weighted, srctgttypes):
 
 
 ##########################################################
-def calculate_local_avgpathlen2(g, refvids, scale, weighted, srctgttypes):
+def calculate_local_avgpathlen2(g, refvids, scale, weighted, srctgttypes,
+        cached={}):
     """Average path length in a small ball with radius given by @scale"""
     # info(inspect.stack()[0][3] + '()')
 
@@ -251,18 +260,17 @@ def calculate_local_avgpathlen2(g, refvids, scale, weighted, srctgttypes):
                 return_distance=True, sort_results=True)
         induced = induced_by(g, inds[0])
         induced = induced.components(mode='weak').giant()
-        meanw[i], _ = calculate_avg_path_length(induced, weighted=True,
-                srctgttypes=[ORIGINAL, BRIDGE],)
+        _, meanw[i], _ = calculate_avg_path_length(induced, weighted=True,
+                srctgttypes=[ORIGINAL, BRIDGE], cached=cached)
 
     return meanw
 ##########################################################
-# def extract_features(g, scale, nbridges):
 def extract_features(g, refvids, scale, nbridges):
     """Extract features from graph @g """
     # info(inspect.stack()[0][3] + '()')
     etypes = np.array(g.es['type'])
-    meanw, stdw = calculate_avg_path_length(g, weighted=True,
-            srctgttypes=[ORIGINAL, BRIDGE],)
+    dists, meanw, stdw = calculate_avg_path_length(g, weighted=True,
+            srctgttypes=[ORIGINAL, BRIDGE], cached={})
 
     bv = g.betweenness()
     betwvmean, betwvstd = np.mean(bv), np.std(bv)
@@ -271,7 +279,7 @@ def extract_features(g, refvids, scale, nbridges):
             # srctgttypes=[ORIGINAL, BRIDGE],)
 
     meanlws = calculate_local_avgpathlen2(g, refvids, scale, weighted=True,
-            srctgttypes=[ORIGINAL, BRIDGE],)
+            srctgttypes=[ORIGINAL, BRIDGE], cached=dists)
     
     # return [g.vcount(), g.ecount(),
         # nbridges, len(np.where(etypes == BRIDGEACC)[0]),
@@ -409,6 +417,7 @@ def choose_new_bridges(g, nnewedges, minlen=-1):
     """Choose new edges. Multiple edges are not allowed"""
     info(inspect.stack()[0][3] + '()')
 
+    # t0 = time.time()
     all = set(list(combinations(np.arange(g.vcount()), 2)))
     es = [[e.source, e.target] for e in list(g.es)]
 
@@ -418,11 +427,17 @@ def choose_new_bridges(g, nnewedges, minlen=-1):
         es = np.concatenate([y0, y1], axis=1)
     es = set([(e[0], e[1]) for e in es]) # For faster checks
 
+    # print(time.time() - t0); t0 = time.time(); 
     available = np.array(list(all.difference(es)))
     # return choose_bridges_acc(g, available)
     # return choose_bridges_random(g, nnewedges, available)
 
+    # print(time.time() - t0); t0 = time.time(); 
     coords = [(x, y) for x, y in zip(g.vs['x'], g.vs['y'])]
+
+    # choose_bridges_random_minlen(g, nnewedges, available, coords, minlen)
+    # print(time.time() - t0); t0 = time.time();  #TODO: remove it
+
     return choose_bridges_random_minlen(g, nnewedges, available, coords, minlen)
 
 ##########################################################
