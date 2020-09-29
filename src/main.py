@@ -22,6 +22,7 @@ from scipy.spatial import cKDTree
 from itertools import combinations
 from myutils import info, graph, plot, geo
 from sklearn.neighbors import BallTree
+from itertools import combinations
 
 ORIGINAL = 0
 BRIDGE = 1
@@ -36,6 +37,7 @@ def parse_graphml(graphmlpath, undir=True, samplerad=-1):
     info(inspect.stack()[0][3] + '()')
 
     g = graph.simplify_graphml(graphmlpath, directed=False)
+    
     g['vcountorig'] = g.vcount() #TODO: move this to myutils
     g['ecountorig'] = g.ecount()
     g = sample_circle_from_graph(g, samplerad)
@@ -104,7 +106,7 @@ def add_wedge(g, srcid, tgtid, etype, bridgeid=-1):
     return g
 
 ##########################################################
-def add_detour_route(g, edge, origtree, spacing, nnearest):
+def add_detour_route(g, edge, origtree, spacing, bridgeid, nnearest):
     """Add shortcut path between @edge vertices"""
     info(inspect.stack()[0][3] + '()')
     orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0]
@@ -127,16 +129,16 @@ def add_detour_route(g, edge, origtree, spacing, nnearest):
  
         for i, id in enumerate(ids):
             if orig[id] != srcid and orig[id] != tgtid:
-                g = add_wedge(g, vlast, orig[id], BRIDGEACC)
+                g = add_wedge(g, vlast, orig[id], BRIDGEACC, bridgeid)
                 break
 
         vlast = id
         d += spacing
 
-    return add_wedge(g, vlast, tgtid, BRIDGEACC)
+    return add_wedge(g, vlast, tgtid, BRIDGEACC, bridgeid)
 
 ##########################################################
-def add_bridge(g, edge, origtree, spacing, nnearest):
+def add_bridge(g, edge, origtree, spacing, bridgeid, nnearest):
     """Add @eid bridge and accesses in @g"""
     info(inspect.stack()[0][3] + '()')
     orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0]
@@ -159,7 +161,7 @@ def add_bridge(g, edge, origtree, spacing, nnearest):
         nadded = len(np.where(np.array(g.vs['type']) == BRIDGEACC)[0])
         g.vs[newvid]['origid'] = g['vcountsampled'] + nadded
         
-        g = add_wedge(g, lastpid, newvid, BRIDGE)
+        g = add_wedge(g, lastpid, newvid, BRIDGE, bridgeid)
         g.vs[newvid]['x'] = p[0]
         g.vs[newvid]['y'] = p[1]
         _, ids = origtree.query(p, nnearest + 2)
@@ -167,15 +169,15 @@ def add_bridge(g, edge, origtree, spacing, nnearest):
         for i, id in enumerate(ids): # create accesses
             if i >= nnearest: break
             if orig[id] == srcid or orig[id] == tgtid: continue
-            g = add_wedge(g, newvid, orig[id], BRIDGEACC)
+            g = add_wedge(g, newvid, orig[id], BRIDGEACC, bridgeid)
 
         lastpid = newvid
 
-    g = add_wedge(g, lastpid, tgtid, BRIDGE)
+    g = add_wedge(g, lastpid, tgtid, BRIDGE, bridgeid)
     return g
 
 ##########################################################
-def partition_edges(g, endpoints, spacing, nnearest=1):
+def partition_edges(g, endpoints, spacing, bridgeid, nnearest=1):
     """Partition bridges spaced by @spacing and each new vertex is connected to
     the nearest node """
     # info(inspect.stack()[0][3] + '()')
@@ -188,7 +190,7 @@ def partition_edges(g, endpoints, spacing, nnearest=1):
     coords = [[float(xs[i]), float(ys[i])] for i in orig]
 
     origtree = cKDTree(coords)
-    g = add_bridge(g, endpoints, origtree, spacing, nnearest)
+    g = add_bridge(g, endpoints, origtree, spacing, bridgeid, nnearest)
     # add_detour_route(g, endpoints, origtree, spacing, nnearest)
         
     return g
@@ -219,137 +221,88 @@ def calculate_avg_path_length(g, weighted=False):
     return pathlens
 
 ##########################################################
-def calculate_local_avgpathlen(gorig, balls, dists, srctgttypes):
-    """Average path length in a small ball with radius given by @scale"""
-    # info(inspect.stack()[0][3] + '()')
-
-    # Find the vertices with the desired types
-    induced = induced_by(gorig, vs)
-    # coords = np.array([[x, y] for x, y in zip(g.vs['x'], g.vs['y'])])
-    # coords = get_coords(g)
-
-    meanw = np.zeros(len(refvids), dtype=float)
-    # stdw = np.zeros(g.vcount(), dtype=float)
-
-    for i, vid in enumerate(refvids):
-        # bt = BallTree(np.deg2rad(coords), metric='haversine')
-        c0 = np.array([g['coords'][vid, :]])
-        inds = tree.query_radius(np.deg2rad(c0), scale / geo.R)
-
-        if len(inds) == 0: continue
-
-        inds = sorted(inds[0])
-
-        m = len(inds)
-        d = np.zeros(int(m * (m-1) / 2))
-        k = 0
-
-        for j in range(len(inds) - 1):
-            sorig = g.vs[inds[j]]['origid']
-            for t in inds[j+1:]:
-                torig = g.vs[t]['origid']
-                if torig == None: breakpoint()
-                
-                d[k] = dists[(sorig, torig)]
-                k += 1
-        
-        meanw[i] = np.mean(d)
-
-        # induced = induced_by(g, inds[0])
-        # induced = induced.components(mode='weak').giant()
-        # _, meanw[i], _ = calculate_avg_path_length(induced, weighted=True,
-                # srctgttypes=[ORIGINAL, BRIDGE], cached=dists)
-
-    return meanw
-
-def calculate_local_avgpathlen3(g, ballids, pathlens):
-    from itertools import combinations
+def calculate_local_avgpathlen(g, ballids, pathlens):
     combs = list(combinations(ballids, 2))
-    pathlens = [ pathlens[comb] for comb in combs ]
-    return np.mean(pathlens), np.std(pathlens)
-    
+    return np.array([ pathlens[comb] for comb in combs ])
 
 ##########################################################
 def extract_features_global(g, pathlens):
     """Extract graph global measurements"""
     info(inspect.stack()[0][3] + '()')
 
-    bv = g.betweenness()
-    betwvmean, betwvstd = np.mean(bv), np.std(bv)
-
+    betv = g.betweenness()
     pathlensv = np.array(list(pathlens.values()))
     
-    return np.mean(pathlensv), np.std(pathlensv), betwvmean, betwvstd
+    return dict(
+            g_pathlenmean = np.mean(pathlensv),
+            g_pathlenstd = np.std(pathlensv),
+            g_betwmean = np.mean(betv),
+            g_betwstd = np.std(betv),
+            )
 
 ##########################################################
 def extract_features_local(g, ballids, pathlens):
     """Extract local features from ballids"""
 
-    pathsmean, pathsstd = calculate_local_avgpathlen3(g, ballids, pathlens)
-    # other features
+    pathlens = calculate_local_avgpathlen(g, ballids, pathlens)
 
-    return pathsmean
+    degrs = np.array(g.degree())[ballids]
+    # g.similarity_jaccard(vertices=ballids)
+    
+    divers = np.array(g.diversity(vertices=ballids, weights=g.es['length']))
+    divers = divers[~np.isnan(divers)]
+    divers = divers[np.isfinite(divers)]
+
+    induced = induced_by(g, ballids)
+    assort = induced.assortativity(induced.degree(), directed=False)
+    clcoeff = induced.transitivity_undirected(mode="nan") # clustering coefficient
+    clos = np.array(g.closeness())[ballids]
+
+    return dict(
+            pathlen = np.mean(pathlens),
+            degree = np.mean(degrs),
+            divers = np.mean(divers),
+            assort = assort,
+            clucoeff = clcoeff,
+            closeness = np.mean(clos)
+            )
 
 ##########################################################
-def extract_features(g, balls, nbridges):
+def extract_features(g, balls):
     """Extract features from graph @g """
     # info(inspect.stack()[0][3] + '()')
-    etypes = np.array(g.es['type'])
-
     pathlens = calculate_avg_path_length(g, weighted=True)
 
-    pathsmean, pathsstd, betwvmean, betwvstd = \
-            extract_features_global(g, pathlens)
+    features = extract_features_global(g, pathlens)
     
-    for ball in balls:
-        lpathsmean, lpathsstd = extract_features_local(g, ball, pathlens)
-
-    # return [g.vcount(), g.ecount(),
-        # nbridges, len(np.where(etypes == BRIDGEACC)[0]),
-        # meanw, stdw, betwvmean, betwvstd, meanlw, stdlw]
-
-    # ret = [g.vcount(), g.ecount(),
-        # nbridges, len(np.where(etypes == BRIDGEACC)[0]),
-        # meanw, stdw, betwvmean, betwvstd]
-    # return ret + meanlws.tolist()
-
+    for i, ball in enumerate(balls):
+        featsl = extract_features_local(g, ball, pathlens)
+        for k, v in featsl.items(): features['{}_{:03d}'.format(k, i)] = v
+    
+    features['nbridges'] = len(np.unique(g.es['bridgeid'])) - 1
+    features['naccess'] = len(np.where(np.array(g.es['type']) == BRIDGEACC)[0])
+    return features
+    
 ##########################################################
 def analyze_increment_of_bridges(g, bridges, spacing, balls, outcsv):
     """Analyze increment of @bridges to @g. We add entrances/exit spaced
     by @spacing and output to @outcsv."""
     info(inspect.stack()[0][3] + '()')
 
-    g.es['type'] = ORIGINAL
-    prev = 0
-
-    features = [ extract_features(g, balls, 0) ]
-
     nbridges = len(bridges)
 
-    for i in range(1, nbridges + 1):
-        info('bridgeid:{}'.format(i))
-        es = bridges[i-1]
+    feats = extract_features(g, balls)
+    vals = [feats.values()]
+
+    for bridgeid, es in enumerate(bridges):
+        info('bridgeid:{}'.format(bridgeid))
         g.vs[es[0]]['type'] = BRIDGE
         g.vs[es[1]]['type'] = BRIDGE
-        g = partition_edges(g, es, spacing, nnearest=1)
+        g = partition_edges(g, es, spacing, bridgeid, nnearest=1)
+        vals.append(extract_features(g, balls).values())
 
-        newfeatures = extract_features(g, refvids, tree, scale, i)
-        features.append(newfeatures)
-
-    # cols = 'nvertices,nedges,nbridges,naccess,' \
-            # 'avgpathlen,stdpathlen,betwvmean,betwvstd,' \
-            # 'lavgpathlen,lstdpathlen'.\
-            # split(',')
-    
-    refstr = ','.join([ 'ref{:02d}'.format(j) for j in range(nref)])
-    cols = 'nvertices,nedges,nbridges,naccess,' \
-            'avgpathlen,stdpathlen,betwvmean,betwvstd,' + refstr
-    cols = cols.split(',')
-            # 'lavgpathlen0,lavgpathlen1'.\
-            # split(',')
-    df = pd.DataFrame(features, columns=cols)
+    df = pd.DataFrame(vals, columns=feats.keys())
     df.to_csv(outcsv, index=False)
-    info('df:{}'.format(df))
     return g
 
 ##########################################################
@@ -527,10 +480,7 @@ def main():
     nref = 30
     centerids = np.random.permutation(g.vcount())[:nref]
     balls = get_neighbourhoods(g, centerids, scale)
-    # balls = get_neighbourhoods_origids(g, centerids, scale)
-
     g = analyze_increment_of_bridges(g, es, spacing, balls, outcsv)
-
     pickle.dump(g, open(outpklpath, 'wb'))
 
     plot_map(g, args.outdir)
