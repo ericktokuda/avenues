@@ -123,25 +123,25 @@ def plot_hists(df, localfeats, outdir):
         plt.savefig(pjoin(outdir, 'hist_{}.png'.format(col1)))
         plt.close()
 
+##########################################################
 def plot_pairwise_points(df, localfeats, outdir):
     m = len(df)
-    for col1 in localfeats[1:]:
-        x = np.zeros(m, dtype=float)
-        for k in range(30):
-            x += df['{}_{:03d}'.format(col1, k)].values
-        for col2 in ['pathlen']:
-            y = np.zeros(m, dtype=float)
-            for k in range(30):
-                y += df['{}_{:03d}'.format(col2, k)].values
 
+    i = 29
+    col2 = 'pathlen'
+    for col1 in localfeats[1:]:
         nrows = 1;  ncols = 1; figscale = 8
         fig, axs = plt.subplots(nrows, ncols,
                     figsize=(ncols*figscale, nrows*figscale))
+
+        x = df['{}_{:03d}'.format(col1, i)]
+        y = df['{}_{:03d}'.format(col2, i)]
+
         axs.scatter(x, y)
         axs.set_xlabel(col1)
         axs.set_ylabel('Pathlen')
         plt.tight_layout()
-        plt.savefig(pjoin(args.outdir, '{}_{}.png'.format(col1, col2)))
+        plt.savefig(pjoin(outdir, 'pair_{}_{}.png'.format(col1, col2)))
         plt.close()
 
 ##########################################################
@@ -164,6 +164,7 @@ def main():
     plot_local_mean(df, args.outdir)
     plot_corr_all(df, localfeats, args.outdir)
     plot_hists(df, localfeats, args.outdir)
+    plot_pairwise_points(df, localfeats, args.outdir )
 
     info('Elapsed time:{}'.format(time.time()-t0))
     info('Output generated in {}'.format(args.outdir))

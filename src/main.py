@@ -296,18 +296,19 @@ def extract_features(g, balls):
     return features
     
 ##########################################################
-def analyze_increment_of_bridges(g, bridges, spacing, balls, outcsv):
+def analyze_increment_of_bridges(gorig, bridges, spacing, balls, outcsv):
     """Analyze increment of @bridges to @g. We add entrances/exit spaced
     by @spacing and output to @outcsv."""
     info(inspect.stack()[0][3] + '()')
 
     nbridges = len(bridges)
 
-    feats = extract_features(g, balls)
+    feats = extract_features(gorig, balls)
     vals = [feats.values()]
 
     for bridgeid, es in enumerate(bridges):
         info('bridgeid:{}'.format(bridgeid))
+        g = gorig.copy()
         g.vs[es[0]]['type'] = BRIDGE
         g.vs[es[1]]['type'] = BRIDGE
         g = partition_edges(g, es, spacing, bridgeid, nnearest=1)
@@ -488,7 +489,7 @@ def main():
 
     es = choose_new_bridges(g, args.nbridges, minlen)
 
-    nref = 30
+    nref = 100
     centerids = np.random.permutation(g.vcount())[:nref]
     balls = get_neighbourhoods(g, centerids, scale)
     g = analyze_increment_of_bridges(g, es, spacing, balls, outcsv)
