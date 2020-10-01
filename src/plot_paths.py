@@ -22,9 +22,9 @@ def plot_global(df, outdir):
     nrows = 1;  ncols = 1; figscale = 8
     fig, axs = plt.subplots(nrows, ncols, figsize=(ncols*figscale, nrows*figscale))
 
-    y = df.g_pathlenmean
+    y = df.g_pathlen_mean
     # axs.scatter(list(range(len(y))), y, label='global')
-    axs.errorbar(list(range(len(y))), y, yerr=df.g_pathlenstd)
+    axs.errorbar(list(range(len(y))), y, yerr=df.g_pathlen_std)
     plt.savefig(pjoin(outdir, 'global.png'))
 
 ##########################################################
@@ -136,44 +136,7 @@ def main():
     plot_local_individually(df, args.outdir)
     plot_local_all(df, args.outdir)
 
-    # plot_corr_all(df, args.outdir)
-
-
-
-    # cols = ['pathlen', 'degree', 'divers', 'assort', 'clucoeff', 'closeness']
-    # m = len(df)
-    # for i, col1 in enumerate(cols):
-
-        # x = np.zeros(m, dtype=float)
-        # for k in range(30):
-            # x += df['{}_{:03d}'.format(col1, k)].values
-
-        # nstr = '{:03d}'.format(i) # plot histogram
-        # nrows = 1;  ncols = 1; figscale = 8
-        # fig, axs = plt.subplots(nrows, ncols,
-                    # figsize=(ncols*figscale, nrows*figscale))
-        # axs.hist(x)
-        # plt.tight_layout()
-        # plt.savefig(pjoin(args.outdir, 'hist_{}.png'.format(col1)))
-        # plt.close()
-
-        # for col2 in cols[i+1:]:
-            # y = np.zeros(m, dtype=float)
-            # for k in range(30):
-                # y += df['{}_{:03d}'.format(col2, k)].values
-
-
-        # nstr = '{:03d}'.format(i)
-        # nrows = 1;  ncols = 1; figscale = 8
-        # fig, axs = plt.subplots(nrows, ncols,
-                    # figsize=(ncols*figscale, nrows*figscale))
-        # axs.scatter(x, y)
-        # plt.tight_layout()
-        # plt.savefig(pjoin(args.outdir, '{}_{}.png'.format(col1, col2)))
-        # plt.close()
-
-
-    cols = ['pathlen', 'degree', 'divers', 'assort', 'clucoeff', 'closeness']
+    cols = ['pathlen', 'degree', 'betwv', 'divers', 'clucoeff', 'closeness']
     m = len(df)
     for i, col1 in enumerate(cols):
         x = np.zeros(m, dtype=float)
