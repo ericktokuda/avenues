@@ -107,6 +107,17 @@ def plot_corr_all(df, outdir):
     ax.set_yticklabels(data.columns)
     plt.savefig(pjoin(outdir, 'heatmap.png'))
 
+
+    # cols = data.columns
+    # for i, col1 in enumerate(cols):
+        # for col2 in cols[i+1:]:
+            # nrows = 1;  ncols = 1; figscale = 8
+            # fig, axs = plt.subplots(nrows, ncols,
+                        # figsize=(ncols*figscale, nrows*figscale))
+            # axs.scatter(data[col1], data[col2])
+            # plt.tight_layout()
+            # plt.savefig(pjoin(outdir, '{}_{}.png'.format(col1, col2)))
+            # plt.close()
 ##########################################################
 def main():
     info(inspect.stack()[0][3] + '()')
@@ -125,7 +136,75 @@ def main():
     plot_local_individually(df, args.outdir)
     plot_local_all(df, args.outdir)
 
-    plot_corr_all(df, args.outdir)
+    # plot_corr_all(df, args.outdir)
+
+
+
+    # cols = ['pathlen', 'degree', 'divers', 'assort', 'clucoeff', 'closeness']
+    # m = len(df)
+    # for i, col1 in enumerate(cols):
+
+        # x = np.zeros(m, dtype=float)
+        # for k in range(30):
+            # x += df['{}_{:03d}'.format(col1, k)].values
+
+        # nstr = '{:03d}'.format(i) # plot histogram
+        # nrows = 1;  ncols = 1; figscale = 8
+        # fig, axs = plt.subplots(nrows, ncols,
+                    # figsize=(ncols*figscale, nrows*figscale))
+        # axs.hist(x)
+        # plt.tight_layout()
+        # plt.savefig(pjoin(args.outdir, 'hist_{}.png'.format(col1)))
+        # plt.close()
+
+        # for col2 in cols[i+1:]:
+            # y = np.zeros(m, dtype=float)
+            # for k in range(30):
+                # y += df['{}_{:03d}'.format(col2, k)].values
+
+
+        # nstr = '{:03d}'.format(i)
+        # nrows = 1;  ncols = 1; figscale = 8
+        # fig, axs = plt.subplots(nrows, ncols,
+                    # figsize=(ncols*figscale, nrows*figscale))
+        # axs.scatter(x, y)
+        # plt.tight_layout()
+        # plt.savefig(pjoin(args.outdir, '{}_{}.png'.format(col1, col2)))
+        # plt.close()
+
+
+    cols = ['pathlen', 'degree', 'divers', 'assort', 'clucoeff', 'closeness']
+    m = len(df)
+    for i, col1 in enumerate(cols):
+        x = np.zeros(m, dtype=float)
+        for k in range(30):
+            x += df['{}_{:03d}'.format(col1, k)].values
+
+        nstr = '{:03d}'.format(i) # plot histogram
+        nrows = 1;  ncols = 1; figscale = 8
+        fig, axs = plt.subplots(nrows, ncols,
+                    figsize=(ncols*figscale, nrows*figscale))
+        axs.hist(x)
+        plt.tight_layout()
+        plt.savefig(pjoin(args.outdir, 'hist_{}.png'.format(col1)))
+        plt.close()
+
+        # for col2 in cols[i+1:]:
+        for col2 in ['pathlen']:
+            y = np.zeros(m, dtype=float)
+            for k in range(30):
+                y += df['{}_{:03d}'.format(col2, k)].values
+
+
+        nstr = '{:03d}'.format(i)
+        nrows = 1;  ncols = 1; figscale = 8
+        fig, axs = plt.subplots(nrows, ncols,
+                    figsize=(ncols*figscale, nrows*figscale))
+        axs.scatter(x, y)
+        plt.tight_layout()
+        plt.savefig(pjoin(args.outdir, '{}_{}.png'.format(col1, col2)))
+        plt.close()
+
 
         # plt.errorbar(list(range(len(df))), avgplennorm, yerr=df.stdpathlen,
     info('Elapsed time:{}'.format(time.time()-t0))

@@ -226,22 +226,27 @@ def calculate_local_avgpathlen(g, ballids, pathlens):
     return np.array([ pathlens[comb] for comb in combs ])
 
 ##########################################################
-def extract_features_global(g, pathlens):
+def extract_features_global(g, pathlens, betwv):
     """Extract graph global measurements"""
     info(inspect.stack()[0][3] + '()')
 
-    betv = g.betweenness()
     pathlensv = np.array(list(pathlens.values()))
+    assort = g.assortativity(g.degree(), directed=False)
+    clcoeff = g.transitivity_undirected(mode="nan") # clustering coefficient
     
     return dict(
-            g_pathlenmean = np.mean(pathlensv),
-            g_pathlenstd = np.std(pathlensv),
-            g_betwmean = np.mean(betv),
-            g_betwstd = np.std(betv),
+            g_pathlen_mean = np.mean(pathlensv),
+            g_pathlen_std = np.std(pathlensv),
+            g_betwv_mean = np.mean(betwv),
+            g_betwv_std = np.std(betwv),
+            g_assort_mean = np.mean(assort),
+            g_assort_std = np.std(assort),
+            g_clcoeff_mean = np.mean(clcoeff),
+            g_clcoeff_std = np.std(clcoeff),
             )
 
 ##########################################################
-def extract_features_local(g, ballids, pathlens):
+def extract_features_local(g, ballids, pathlens, betwv):
     """Extract local features from ballids"""
 
     pathlens = calculate_local_avgpathlen(g, ballids, pathlens)
@@ -253,17 +258,23 @@ def extract_features_local(g, ballids, pathlens):
     divers = divers[~np.isnan(divers)]
     divers = divers[np.isfinite(divers)]
 
-    induced = induced_by(g, ballids)
-    assort = induced.assortativity(induced.degree(), directed=False)
-    clcoeff = induced.transitivity_undirected(mode="nan") # clustering coefficient
+    # induced = induced_by(g, ballids)
+    # assort = induced.assortativity(induced.degree(), directed=False)
+    # clcoeff = induced.transitivity_undirected(mode="nan") # clustering coefficient
+    
+    # clucoeff
+    clucoeff = np.array(g.transitivity_local_undirected(mode="nan"))[ballids]
+    clucoeff = clucoeff[~np.isnan(clucoeff)]
+    
     clos = np.array(g.closeness())[ballids]
 
     return dict(
             pathlen = np.mean(pathlens),
             degree = np.mean(degrs),
+            betwv = np.mean(betwv),
             divers = np.mean(divers),
-            assort = assort,
-            clucoeff = clcoeff,
+            # assort = assort,
+            clucoeff = np.mean(clucoeff),
             closeness = np.mean(clos)
             )
 
@@ -272,11 +283,12 @@ def extract_features(g, balls):
     """Extract features from graph @g """
     # info(inspect.stack()[0][3] + '()')
     pathlens = calculate_avg_path_length(g, weighted=True)
+    betwv = g.betweenness()
 
-    features = extract_features_global(g, pathlens)
+    features = extract_features_global(g, pathlens, betwv)
     
     for i, ball in enumerate(balls):
-        featsl = extract_features_local(g, ball, pathlens)
+        featsl = extract_features_local(g, ball, pathlens, betwv)
         for k, v in featsl.items(): features['{}_{:03d}'.format(k, i)] = v
     
     features['nbridges'] = len(np.unique(g.es['bridgeid'])) - 1
@@ -421,7 +433,6 @@ def origid2sampleid(g, origids):
     return [ g.vs['origid2sampleid'][list(origid)] for origid in origids ]
 
 ##########################################################
-# def get_neighbourhoods(centerids, coords, r):
 def get_neighbourhoods(g, centerids, r):
     """Get neighbour ids within radius r for each c0 in c0s.
     It includes self."""
