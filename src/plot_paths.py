@@ -14,6 +14,7 @@ import matplotlib; matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from myutils import info, create_readme
 import pandas as pd
+import scipy.stats
 
 ##########################################################
 def plot_global(df, outdir):
@@ -78,9 +79,17 @@ def plot_corr_all(df, localfeats, outdir):
     data['g_nbridges'] = df.nbridges
     data['g_naccess'] = df.naccess
     data['g_pathlen_mean'] = df.g_pathlen_mean
-    data['g_pathlen_std'] = df.g_pathlen_std
-    # data['g_betwmean'] = df.g_betwmean
-    # data['g_betwstd'] = df.g_betwstd
+    # data['g_pathlen_std'] = df.g_pathlen_std
+    data['g_betwv_mean'] = df.g_betwv_mean
+    # data['g_betwv_std'] = df.g_betwstd
+    data['g_assort_mean'] = df.g_assort_mean
+    # data['g_assort_std'] = df.g_assort_std
+    data['g_clucoeff_mean'] = df.g_clucoeff_mean
+    # data['g_clucoeff_std'] = df.g_clucoeff_std
+    data['g_divers_mean'] = df.g_divers_mean
+    # data['g_divers_std'] = df.g_divers_std
+    data['g_clos_mean'] = df.g_clos_mean
+    # data['g_clos_std'] = df.g_clos_std
 
     for feat in localfeats:
         cols = []
@@ -127,19 +136,28 @@ def plot_hists(df, localfeats, outdir):
 def plot_pairwise_points(df, localfeats, outdir):
     m = len(df)
 
-    i = 29
+    # y = df['{}_{:03d}'.format(col2, i)]
+    y = []
     col2 = 'pathlen'
+    for col in df.columns:
+        if not col.startswith(col2): continue
+        y.append(np.mean(df[col]))
+
     for col1 in localfeats[1:]:
         nrows = 1;  ncols = 1; figscale = 8
         fig, axs = plt.subplots(nrows, ncols,
                     figsize=(ncols*figscale, nrows*figscale))
 
-        x = df['{}_{:03d}'.format(col1, i)]
-        y = df['{}_{:03d}'.format(col2, i)]
+        x = []
+        for col in df.columns:
+            if not col.startswith(col1): continue
+            x.append(np.mean(df[col]))
 
-        axs.scatter(x, y)
+        corr, _ = scipy.stats.pearsonr(x, y)
+        axs.scatter(x, y, alpha=0.3)
         axs.set_xlabel(col1)
         axs.set_ylabel('Pathlen')
+        axs.set_title('Pearson:{}'.format(corr))
         plt.tight_layout()
         plt.savefig(pjoin(outdir, 'pair_{}_{}.png'.format(col1, col2)))
         plt.close()
@@ -157,12 +175,12 @@ def main():
     readmepath = create_readme(sys.argv, args.outdir)
 
     df = pd.read_csv(args.results)
-    localfeats = ['pathlen', 'degree', 'betwv', 'divers', 'clucoeff', 'closeness']
+    localfeats = ['pathlen', 'degree', 'betwv', 'divers', 'clucoeff', 'clos']
 
-    plot_global(df, args.outdir)
-    plot_local_individually(df, args.outdir)
-    plot_local_mean(df, args.outdir)
-    plot_corr_all(df, localfeats, args.outdir)
+    # plot_global(df, args.outdir)
+    # plot_local_individually(df, args.outdir)
+    # plot_local_mean(df, args.outdir)
+    # plot_corr_all(df, localfeats, args.outdir)
     plot_hists(df, localfeats, args.outdir)
     plot_pairwise_points(df, localfeats, args.outdir )
 

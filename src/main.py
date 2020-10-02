@@ -226,69 +226,79 @@ def calculate_local_avgpathlen(g, ballids, pathlens):
     return np.array([ pathlens[comb] for comb in combs ])
 
 ##########################################################
-def extract_features_global(g, pathlens, betwv):
+def extract_features_global(g, pathlens, degrees, betwv, clucoeff, divers, clos):
     """Extract graph global measurements"""
     info(inspect.stack()[0][3] + '()')
 
     pathlensv = np.array(list(pathlens.values()))
     assort = g.assortativity(g.degree(), directed=False)
-    clcoeff = g.transitivity_undirected(mode="nan") # clustering coefficient
     
     return dict(
             g_pathlen_mean = np.mean(pathlensv),
             g_pathlen_std = np.std(pathlensv),
+            g_degree_mean = np.mean(degrees),
+            g_degree_std = np.std(degrees),
             g_betwv_mean = np.mean(betwv),
             g_betwv_std = np.std(betwv),
             g_assort_mean = np.mean(assort),
             g_assort_std = np.std(assort),
-            g_clcoeff_mean = np.mean(clcoeff),
-            g_clcoeff_std = np.std(clcoeff),
+            g_clucoeff_mean = np.mean(clucoeff),
+            g_clucoeff_std = np.std(clucoeff),
+            g_divers_mean = np.mean(divers),
+            g_divers_std = np.std(divers),
+            g_clos_mean = np.mean(clos),
+            g_clos_std = np.std(clos),
             )
 
 ##########################################################
-def extract_features_local(g, ballids, pathlens, betwv):
+def extract_features_local(g, ballids, pathlens, degrees, betwv, clucoeff, divers, clos):
     """Extract local features from ballids"""
 
     pathlens = calculate_local_avgpathlen(g, ballids, pathlens)
 
-    degrs = np.array(g.degree())[ballids]
+    degrees_ = degrees[ballids]
+    betwv_ = betwv[ballids]
+    clucoeff_ = clucoeff[ballids]
+    clucoeff_ = clucoeff_[~np.isnan(clucoeff_)]
     # g.similarity_jaccard(vertices=ballids)
     
-    divers = np.array(g.diversity(vertices=ballids, weights=g.es['length']))
-    divers = divers[~np.isnan(divers)]
-    divers = divers[np.isfinite(divers)]
+    divers_ = divers[ballids]
+    divers_ = divers_[~np.isnan(divers_)]
+    divers_ = divers_[np.isfinite(divers_)]
 
     # induced = induced_by(g, ballids)
     # assort = induced.assortativity(induced.degree(), directed=False)
-    # clcoeff = induced.transitivity_undirected(mode="nan") # clustering coefficient
     
-    # clucoeff
-    clucoeff = np.array(g.transitivity_local_undirected(mode="nan"))[ballids]
-    clucoeff = clucoeff[~np.isnan(clucoeff)]
     
-    clos = np.array(g.closeness())[ballids]
+    clos_ = clos[ballids]
 
     return dict(
             pathlen = np.mean(pathlens),
-            degree = np.mean(degrs),
-            betwv = np.mean(betwv),
-            divers = np.mean(divers),
+            degree = np.mean(degrees_),
+            betwv = np.mean(betwv_),
+            clucoeff = np.mean(clucoeff_),
+            divers = np.mean(divers_),
             # assort = assort,
-            clucoeff = np.mean(clucoeff),
-            closeness = np.mean(clos)
+            clos = np.mean(clos_)
             )
 
 ##########################################################
 def extract_features(g, balls):
     """Extract features from graph @g """
     # info(inspect.stack()[0][3] + '()')
+    degrees = np.array(g.degree())
     pathlens = calculate_avg_path_length(g, weighted=True)
-    betwv = g.betweenness()
+    betwv = np.array(g.betweenness())
+    clucoeff = np.array(g.transitivity_local_undirected(mode="nan"))
+    divers = np.array(g.diversity(weights=g.es['length']))
+    clos = np.array(g.closeness())
 
-    features = extract_features_global(g, pathlens, betwv)
+    features = extract_features_global(g, pathlens, degrees, betwv, clucoeff,
+            divers, clos)
     
     for i, ball in enumerate(balls):
-        featsl = extract_features_local(g, ball, pathlens, betwv)
+        featsl = extract_features_local(g, ball, pathlens, degrees, betwv,
+                clucoeff, divers, clos)
         for k, v in featsl.items(): features['{}_{:03d}'.format(k, i)] = v
     
     features['nbridges'] = len(np.unique(g.es['bridgeid'])) - 1
