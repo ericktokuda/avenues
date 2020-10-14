@@ -6,7 +6,7 @@ shortest path lengths."""
 
 import argparse
 import time
-import os
+import os, sys
 from os.path import join as pjoin
 import inspect
 
@@ -20,7 +20,7 @@ import pickle
 import pandas as pd
 from scipy.spatial import cKDTree
 from itertools import combinations
-from myutils import info, graph, plot, geo
+from myutils import info, create_readme, graph, plot, geo
 from sklearn.neighbors import BallTree
 from itertools import combinations
 
@@ -232,7 +232,11 @@ def extract_features_global(g, pathlens, degrees, betwv, clucoeff, divers, clos)
 
     pathlensv = np.array(list(pathlens.values()))
     assort = g.assortativity(g.degree(), directed=False)
-    
+    clucoeff_ = clucoeff[~np.isnan(clucoeff)]
+    divers_ = divers[~np.isnan(divers)]
+    divers_ = divers_[np.isfinite(divers_)]
+
+
     return dict(
             g_pathlen_mean = np.mean(pathlensv),
             g_pathlen_std = np.std(pathlensv),
@@ -242,10 +246,10 @@ def extract_features_global(g, pathlens, degrees, betwv, clucoeff, divers, clos)
             g_betwv_std = np.std(betwv),
             g_assort_mean = np.mean(assort),
             g_assort_std = np.std(assort),
-            g_clucoeff_mean = np.mean(clucoeff),
-            g_clucoeff_std = np.std(clucoeff),
-            g_divers_mean = np.mean(divers),
-            g_divers_std = np.std(divers),
+            g_clucoeff_mean = np.mean(clucoeff_),
+            g_clucoeff_std = np.std(clucoeff_),
+            g_divers_mean = np.mean(divers_),
+            g_divers_std = np.std(divers_),
             g_clos_mean = np.mean(clos),
             g_clos_std = np.std(clos),
             )
@@ -475,37 +479,40 @@ def main():
             help='Path to the map in graphml')
     parser.add_argument('--samplerad', default=-1, type=float,
             help='Sample radius')
+    parser.add_argument('--bridgeminlen', default=1, type=float,
+            help='Minimum length of the bridges')
+    parser.add_argument('--spacing', default=.5, type=float,
+            help='Spacing between bridge accesses')
+    parser.add_argument('--scale', default=.7, type=float,
+            help='Neighbourhood scale (to be matched with accessibility)')
     parser.add_argument('--nbridges', default=1, type=int,
             help='Number of shortcut connections')
     parser.add_argument('--outdir', default='/tmp/out/',
             help='Output directory')
     args = parser.parse_args()
 
-    if not os.path.isdir(args.outdir): os.mkdir(args.outdir)
+
+    os.makedirs(args.outdir, exist_ok=True)
+    readmepath = create_readme(sys.argv, args.outdir)
 
     np.random.seed(0)
     outcsv = pjoin(args.outdir, 'results.csv')
-    outpklpath = pjoin(args.outdir, 'finalgraph.pkl')
+    # outpklpath = pjoin(args.outdir, 'finalgraph.pkl')
     maxnedges = np.max(args.nbridges)
-
-    minlen = 1
-    spacing = .2
-    scale = .5
 
     g = parse_graphml(args.graphml, undir=True, samplerad=args.samplerad)
     
     info('sampled nvertices: {}'.format(g.vcount()))
     info('sampled nedges: {}'.format(g.ecount()))
 
-    es = choose_new_bridges(g, args.nbridges, minlen)
+    es = choose_new_bridges(g, args.nbridges, args.bridgeminlen)
 
     nref = 100
     centerids = np.random.permutation(g.vcount())[:nref]
-    balls = get_neighbourhoods(g, centerids, scale)
-    g = analyze_increment_of_bridges(g, es, spacing, balls, outcsv)
-    pickle.dump(g, open(outpklpath, 'wb'))
-
-    plot_map(g, args.outdir)
+    balls = get_neighbourhoods(g, centerids, args.scale)
+    g = analyze_increment_of_bridges(g, es, args.spacing, balls, outcsv)
+    # pickle.dump(g, open(outpklpath, 'wb'))
+    # plot_map(g, args.outdir)
     info('Elapsed time:{}'.format(time.time()-t0))
 
 ##########################################################
