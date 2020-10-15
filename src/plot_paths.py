@@ -136,13 +136,18 @@ def plot_hists(df, localfeats, outdir):
 def plot_pairwise_points(df, localfeats, outdir):
     m = len(df)
 
-    # y = df['{}_{:03d}'.format(col2, i)]
-    y = []
+    # y = []
+    pathlenorig = []
+    pathlennew = []
     col2 = 'pathlen'
-    for col in df.columns:
+    for col in sorted(df.columns):
         if not col.startswith(col2): continue
-        y.append(np.mean(df[col]))
+        # y.append(np.mean(df[col]))
+        pathlennew.append(np.mean(df[col].loc[1:]))
+        pathlenorig.append(df[col].loc[0])
 
+    y = np.array(pathlennew) - np.array(pathlenorig)
+    
     for col1 in localfeats[1:]:
         nrows = 1;  ncols = 1; figscale = 8
         fig, axs = plt.subplots(nrows, ncols,
@@ -151,12 +156,13 @@ def plot_pairwise_points(df, localfeats, outdir):
         x = []
         for col in df.columns:
             if not col.startswith(col1): continue
-            x.append(np.mean(df[col]))
+            # x.append(np.mean(df[col]))
+            x.append(df[col].loc[0])
 
         corr, _ = scipy.stats.pearsonr(x, y)
         axs.scatter(x, y, alpha=0.3)
         axs.set_xlabel(col1)
-        axs.set_ylabel('Pathlen')
+        axs.set_ylabel('Delta pathlen')
         axs.set_title('Pearson:{}'.format(corr))
         plt.tight_layout()
         plt.savefig(pjoin(outdir, 'pair_{}_{}.png'.format(col1, col2)))
