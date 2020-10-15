@@ -481,9 +481,9 @@ def main():
             help='Sample radius')
     parser.add_argument('--bridgeminlen', default=1, type=float,
             help='Minimum length of the bridges')
-    parser.add_argument('--spacing', default=.5, type=float,
+    parser.add_argument('--spacing', default=.4, type=float,
             help='Spacing between bridge accesses')
-    parser.add_argument('--scale', default=.7, type=float,
+    parser.add_argument('--scale', default=.8, type=float,
             help='Neighbourhood scale (to be matched with accessibility)')
     parser.add_argument('--nbridges', default=1, type=int,
             help='Number of shortcut connections')
