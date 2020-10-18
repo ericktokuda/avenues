@@ -133,6 +133,25 @@ def plot_hists(df, localfeats, outdir):
         plt.close()
 
 ##########################################################
+def plot_densities(df, localfeats, outdir):
+    """Plot histogram of the features"""
+    info(inspect.stack()[0][3] + '()')
+    m = len(df)
+    for col1 in localfeats[1:]:
+        x = np.zeros(m, dtype=float)
+        for k in range(30):
+            x += df['{}_{:03d}'.format(col1, k)].values
+
+        nrows = 1;  ncols = 1; figscale = 8
+        fig, axs = plt.subplots(nrows, ncols,
+                    figsize=(ncols*figscale, nrows*figscale))
+        axs.hist(x)
+        axs.set_xlabel(col1)
+        plt.tight_layout()
+        plt.savefig(pjoin(outdir, 'dens_{}.png'.format(col1)))
+        plt.close()
+
+##########################################################
 def plot_pairwise_points(df, localfeats, outdir):
     m = len(df)
 
@@ -159,6 +178,11 @@ def plot_pairwise_points(df, localfeats, outdir):
             # x.append(np.mean(df[col]))
             x.append(df[col].loc[0])
 
+        epsilon = 0.0005
+        inds = np.where(y < -epsilon)[0]
+        x = np.array(x)[inds]
+        y = np.array(y)[inds]
+
         corr, _ = scipy.stats.pearsonr(x, y)
         axs.scatter(x, y, alpha=0.3)
         axs.set_xlabel(col1)
@@ -178,7 +202,6 @@ def main():
     args = parser.parse_args()
 
     if not os.path.isdir(args.outdir): os.mkdir(args.outdir)
-    readmepath = create_readme(sys.argv, args.outdir)
 
     df = pd.read_csv(args.results)
     localfeats = ['pathlen', 'degree', 'betwv', 'divers', 'clucoeff', 'clos']
@@ -187,7 +210,8 @@ def main():
     # plot_local_individually(df, args.outdir)
     # plot_local_mean(df, args.outdir)
     # plot_corr_all(df, localfeats, args.outdir)
-    plot_hists(df, localfeats, args.outdir)
+    # plot_hists(df, localfeats, args.outdir)
+    # plot_densities(df, localfeats, args.outdir)
     plot_pairwise_points(df, localfeats, args.outdir )
 
     info('Elapsed time:{}'.format(time.time()-t0))
