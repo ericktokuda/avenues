@@ -137,18 +137,101 @@ def plot_densities(df, localfeats, outdir):
     """Plot histogram of the features"""
     info(inspect.stack()[0][3] + '()')
     m = len(df)
+
     for col1 in localfeats[1:]:
         x = np.zeros(m, dtype=float)
-        for k in range(30):
+        for k in range(100):
             x += df['{}_{:03d}'.format(col1, k)].values
+
+        # kde = scipy.stats.gaussian_kde(x, bw_method='scott')
+        kde = scipy.stats.gaussian_kde(x, bw_method=.346)
+
+        xtest = np.linspace(np.min(x), np.max(x), 100)
+        ytest = kde.evaluate(xtest)
 
         nrows = 1;  ncols = 1; figscale = 8
         fig, axs = plt.subplots(nrows, ncols,
                     figsize=(ncols*figscale, nrows*figscale))
-        axs.hist(x)
+        axs.hist(x, density=True)
+        axs.plot(xtest, ytest)
         axs.set_xlabel(col1)
         plt.tight_layout()
         plt.savefig(pjoin(outdir, 'dens_{}.png'.format(col1)))
+        plt.close()
+
+##########################################################
+def compare_densities(df, localfeats, outdir):
+    """Plot histogram of the features"""
+    info(inspect.stack()[0][3] + '()')
+    m = len(df)
+    n = 100 # num realizations
+
+    for col1 in localfeats[1:]:
+        nrows = 1;  ncols = 1; figscale = 8
+        fig, axs = plt.subplots(nrows, ncols,
+                    figsize=(ncols*figscale, nrows*figscale))
+
+        # Before bridge
+        x = df['{}_{:03d}'.format(col1, 0)].values
+        # kde = scipy.stats.gaussian_kde(x, bw_method='scott')
+        kde = scipy.stats.gaussian_kde(x, bw_method=.346)
+        xtest = np.linspace(np.min(x), np.max(x), 100)
+        ytest = kde.evaluate(xtest)
+        # axs.hist(x, density=True)
+        axs.plot(xtest, ytest, label='Before')
+
+        # After bridge
+        x = np.zeros(m, dtype=float)
+        for k in range(1, n):
+            x += df['{}_{:03d}'.format(col1, k)].values
+        x /=  (n-1) # average
+        # kde = scipy.stats.gaussian_kde(x, bw_method='scott')
+        kde = scipy.stats.gaussian_kde(x, bw_method=.346)
+        xtest = np.linspace(np.min(x), np.max(x), 100)
+        ytest = kde.evaluate(xtest)
+        # axs.hist(x, density=True)
+        axs.plot(xtest, ytest, label='After')
+
+        axs.set_xlabel(col1)
+        fig.legend()
+        plt.tight_layout()
+        plt.savefig(pjoin(outdir, 'dens_comparison_{}.png'.format(col1)))
+        plt.close()
+
+##########################################################
+def plot_densities_all(localfeats, outdir):
+    """Plot histogram of the features"""
+    info(inspect.stack()[0][3] + '()')
+    dfs = {}
+    dfs['barcelona'] = pd.read_csv('/home/dufresne/temp/bridges/20201016-bridges/barcelona_s1000_n200/results.csv')
+    dfs['dublin'] = pd.read_csv('/home/dufresne/temp/bridges/20201016-bridges/dublin_s1000_n200/results.csv')
+    dfs['manchester'] = pd.read_csv('/home/dufresne/temp/bridges/20201016-bridges/manchester_s1000_n200/results.csv')
+    dfs['paris'] = pd.read_csv('/home/dufresne/temp/bridges/20201016-bridges/paris_s1000_n200/results.csv')
+
+    m = len(dfs['barcelona'])
+
+    for col1 in localfeats[1:]:
+        x = np.zeros(m, dtype=float)
+        nrows = 1;  ncols = 1; figscale = 8
+        fig, axs = plt.subplots(nrows, ncols,
+                    figsize=(ncols*figscale, nrows*figscale))
+
+        for kk in dfs.keys():
+            df = dfs[kk]
+            for k in range(100):
+                x += df['{}_{:03d}'.format(col1, k)].values
+
+            # kde = scipy.stats.gaussian_kde(x, bw_method='scott')
+            kde = scipy.stats.gaussian_kde(x, bw_method=.346)
+
+            xtest = np.linspace(np.min(x), np.max(x), 100)
+            ytest = kde.evaluate(xtest)
+
+            # axs.hist(x, density=True)
+            axs.plot(xtest, ytest, label=kk)
+        axs.set_xlabel(col1)
+        plt.tight_layout()
+        plt.savefig(pjoin(outdir, 'all_dens_{}.png'.format(col1)))
         plt.close()
 
 ##########################################################
@@ -212,7 +295,9 @@ def main():
     # plot_corr_all(df, localfeats, args.outdir)
     # plot_hists(df, localfeats, args.outdir)
     # plot_densities(df, localfeats, args.outdir)
-    plot_pairwise_points(df, localfeats, args.outdir )
+    compare_densities(df, localfeats, args.outdir)
+    # plot_densities_all(localfeats, args.outdir)
+    # plot_pairwise_points(df, localfeats, args.outdir )
 
     info('Elapsed time:{}'.format(time.time()-t0))
     info('Output generated in {}'.format(args.outdir))
