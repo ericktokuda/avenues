@@ -276,6 +276,82 @@ def plot_pairwise_points(df, localfeats, outdir):
         plt.close()
 
 ##########################################################
+def get_correlation_table(dfs, localfeats):
+    corrs = np.zeros((len(localfeats)-1, len(dfs)), dtype=float)
+    for i, l in enumerate(localfeats[1:]):
+        for j, df in enumerate(dfs):
+
+            # get y axis of the correlation
+            pathlenorig = []
+            pathlennew = []
+            col2 = 'pathlen'
+            for col in sorted(df.columns):
+                if not col.startswith(col2): continue
+                # y.append(np.mean(df[col]))
+                pathlennew.append(np.mean(df[col].loc[1:]))
+                pathlenorig.append(df[col].loc[0])
+
+            y = np.array(pathlennew) - np.array(pathlenorig)
+
+            # get x axis
+            x = []
+            for col in df.columns:
+                if not col.startswith(l): continue
+                # x.append(np.mean(df[col]))
+                x.append(df[col].loc[0])
+
+            # filter null values
+            epsilon = 0.0005
+            inds = np.where(y < -epsilon)[0]
+
+            x = np.array(x)[inds]
+            y = np.array(y)[inds]
+
+            corr, _ = scipy.stats.pearsonr(x, y)
+            corrs[i, j] = corr
+    return corrs
+
+##########################################################
+def plot_heatmap(localfeats, outdir):
+    templ = '/home/frodo/results/bridges/20201016-4cities/C_s1000_n200/results.csv'
+    cities = ['barcelona', 'dublin', 'manchester', 'paris']
+    mypaths = {c: templ.replace('C', c) for c in cities}
+    dfs = [pd.read_csv(p) for p in mypaths.values()]
+
+    # nmeasures x ncities
+    corrs = get_correlation_table(dfs, localfeats)
+
+    fig, ax = plt.subplots()
+    im = ax.imshow(corrs, cmap='PiYG')
+
+    # We want to show all ticks...
+    ax.set_xticks(np.arange(corrs.shape[1]))
+    ax.set_yticks(np.arange(corrs.shape[0]))
+    ax.set_xticklabels(cities)
+    ax.set_yticklabels(localfeats[1:])
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    # Loop over data dimensions and create text annotations.
+    for i in range(corrs.shape[0]):
+        for j in range(corrs.shape[1]):
+            text = ax.text(j, i, '{:.02f}'.format(corrs[i, j]),
+                           ha="center", va="center", color="k")
+
+    ax.set_title("Harvest of local farmers (in tons/year)")
+    fig.tight_layout()
+
+    # a = np.random.random((2, 2))
+    # print(a)
+    # plt.imshow(a, cmap='hot', interpolation='nearest')
+    # plt.axis('off')
+    # plt.colorbar()
+    outpath = pjoin(outdir, 'foo.png')
+    plt.savefig(outpath)
+
+##########################################################
 def main():
     info(inspect.stack()[0][3] + '()')
     t0 = time.time()
@@ -284,7 +360,7 @@ def main():
     parser.add_argument('--outdir', default='/tmp/out/', help='Output directory')
     args = parser.parse_args()
 
-    if not os.path.isdir(args.outdir): os.mkdir(args.outdir)
+    os.makedirs(args.outdir, exist_ok=True)
 
     df = pd.read_csv(args.results)
     localfeats = ['pathlen', 'degree', 'betwv', 'divers', 'clucoeff', 'clos']
@@ -295,9 +371,10 @@ def main():
     # plot_corr_all(df, localfeats, args.outdir)
     # plot_hists(df, localfeats, args.outdir)
     # plot_densities(df, localfeats, args.outdir)
-    compare_densities(df, localfeats, args.outdir)
+    # compare_densities(df, localfeats, args.outdir)
     # plot_densities_all(localfeats, args.outdir)
     # plot_pairwise_points(df, localfeats, args.outdir )
+    plot_heatmap(localfeats, args.outdir )
 
     info('Elapsed time:{}'.format(time.time()-t0))
     info('Output generated in {}'.format(args.outdir))
