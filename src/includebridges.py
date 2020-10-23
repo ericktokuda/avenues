@@ -491,7 +491,7 @@ def main():
             help='Neighbourhood scale (to be matched with accessibility)')
     parser.add_argument('--nbridges', default=1, type=int,
             help='Number of shortcut connections')
-    parser.add_argument('--bridgespeed', default=2, type=int,
+    parser.add_argument('--bridgespeed', default=1.0, type=float,
             help='Speed in bridges')
     parser.add_argument('--seed', default=0, type=int,
             help='Randomicity seed')
