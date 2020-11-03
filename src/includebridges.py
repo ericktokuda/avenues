@@ -23,6 +23,9 @@ from itertools import combinations
 from myutils import info, create_readme, graph, plot, geo
 from sklearn.neighbors import BallTree
 from itertools import combinations
+from optimized import generate_waxman_adj
+import scipy
+import pickle as pkl
 
 ORIGINAL = 0
 BRIDGE = 1
@@ -291,7 +294,7 @@ def extract_features_local(g, ballids, pathlens, degrees, betwv, clucoeff, diver
             )
 
 ##########################################################
-def extract_features(g, bridgespeed, balls):
+def extract_features(g, bridgespeed):
     """Extract features from graph @g """
     # info(inspect.stack()[0][3] + '()')
     degrees = np.array(g.degree())
@@ -304,24 +307,24 @@ def extract_features(g, bridgespeed, balls):
     features = extract_features_global(g, pathlens, degrees, betwv, clucoeff,
             divers, clos)
 
-    for i, ball in enumerate(balls):
-        featsl = extract_features_local(g, ball, pathlens, degrees, betwv,
-                clucoeff, divers, clos)
-        for k, v in featsl.items(): features['{}_{:03d}'.format(k, i)] = v
+    # for i, ball in enumerate(balls):
+        # featsl = extract_features_local(g, ball, pathlens, degrees, betwv,
+                # clucoeff, divers, clos)
+        # for k, v in featsl.items(): features['{}_{:03d}'.format(k, i)] = v
 
     features['nbridges'] = len(np.unique(g.es['bridgeid'])) - 1
     features['naccess'] = len(np.where(np.array(g.es['type']) == BRIDGEACC)[0])
     return features
 
 ##########################################################
-def analyze_increment_of_bridges(gorig, bridges, spacing, balls, bridgespeed, outcsv):
+def analyze_increment_of_bridges(gorig, bridges, spacing, bridgespeed, outcsv):
     """Analyze increment of @bridges to @g. We add entrances/exit spaced
     by @spacing and output to @outcsv."""
     info(inspect.stack()[0][3] + '()')
 
     nbridges = len(bridges)
 
-    feats = extract_features(gorig, bridgespeed, balls)
+    feats = extract_features(gorig, bridgespeed)
     vals = [feats.values()]
 
     for bridgeid, es in enumerate(bridges):
@@ -330,7 +333,7 @@ def analyze_increment_of_bridges(gorig, bridges, spacing, balls, bridgespeed, ou
         g.vs[es[0]]['type'] = BRIDGE
         g.vs[es[1]]['type'] = BRIDGE
         g = partition_edges(g, es, spacing, bridgeid, bridgespeed, nnearest=1)
-        vals.append(extract_features(g, bridgespeed, balls).values())
+        vals.append(extract_features(g, bridgespeed).values())
 
     df = pd.DataFrame(vals, columns=feats.keys())
     df.to_csv(outcsv, index=False)
@@ -364,10 +367,6 @@ def plot_map(g, outdir, vertices=False):
     axs[0, 0].add_collection(lc)
     axs[0, 0].autoscale()
 
-    # coords = np.array([[float(x), float(y)] for x, y in zip(g.vs['x'], g.vs['y'])])
-    # coords = get_coords(g)
-
-
     if vertices:
         vids = np.where(np.array(g.vs['type']) == ORIGINAL)[0]
         axs[0, 0].scatter(g['coords'][vids, 0], g['coords'][vids, 1])
@@ -395,7 +394,7 @@ def choose_bridges_random_minlen(g, nnewedges, available, minlen):
         srcid, tgtid = available[ind]
         l = geo.haversine(coords[srcid][0], coords[srcid][1],
                 coords[tgtid][0], coords[tgtid][1])
-        
+
         if l > minlen: bridges.append(available[ind])
         if len(bridges) == nnewedges: break
 
@@ -474,15 +473,118 @@ def get_neighbourhoods_origids(g, centerids, r):
     neids = get_neighbourhoods(centerids, g['coords'], r)
     return [ np.array(g.vs['origid'])[ids] for ids in neids ]
 
+#############################################################
+def get_waxman_params(nvertices, avgdegree, alpha):
+    maxnedges = nvertices * nvertices // 2
+    def f(b):
+        g = generate_waxman(nvertices, maxnedges, alpha=alpha, beta=b)
+        return np.mean(g.degree()) - avgdegree
+
+    beta = scipy.optimize.brentq(f, 0.0001, 1000, xtol=0.00001, rtol=0.01)
+    return beta, alpha
+
+#############################################################
+def generate_waxman(n, maxnedges, alpha, beta, domain=(0, 0, 1, 1)):
+    adjlist, x, y = generate_waxman_adj(n, maxnedges, alpha, beta,
+                                        domain[0], domain[1], domain[2], domain[3])
+    adjlist = adjlist.astype(int).tolist()
+
+    g = igraph.Graph(n, adjlist)
+    g.vs['x'] = x
+    g.vs['y'] = y
+    return g
+
+#############################################################
+def generate_graph(topologymodel, nvertices, avgdegree,
+                   latticethoroidal, baoutpref, wsrewiring, wxalpha,
+                   randomseed, tmpdir):
+    info(inspect.stack()[0][3] + '()')
+    if topologymodel == 'gr':
+        radius = get_rgg_params(nvertices, avgdegree)
+        g = igraph.Graph.GRG(nvertices, radius)
+    elif topologymodel == 'wx':
+        beta, alpha = get_waxman_params(nvertices, avgdegree, wxalpha)
+        maxnedges = nvertices * nvertices // 2
+        g = generate_waxman(nvertices, maxnedges, beta=beta, alpha=alpha)
+
+    g = g.clusters().giant()
+
+    aux = np.array([ [g.vs['x'][i], g.vs['y'][i]] for i in range(g.vcount()) ])
+    g['vcountorig'] = g.vcount()
+    g['ecountorig'] = g.ecount()
+    g['vcountsampled'] = g.vcount()
+    g['ecountsampled'] = g.ecount()
+
+    g.vs['type'] = ORIGINAL
+    g.es['type'] = ORIGINAL
+    g.es['bridgeid'] = -1
+    g.es['speed'] = 1
+
+    for j, e in enumerate(g.es()):
+        l = calculate_edge_len(g, e.source, e.target)
+        g.es[j]['length'] = l
+    coords = -1 + 2*(aux - np.min(aux, 0))/(np.max(aux, 0)-np.min(aux, 0)) # minmax
+
+    g['coords'] = coords
+    return g
+
+##########################################################
+def get_rgg_params(nvertices, avgdegree):
+    rggcatalog = {
+        '625,6': 0.056865545,
+        '10000,6': 0.0139,
+        '22500,6': 0.00925,
+    }
+
+    if '{},{}'.format(nvertices, avgdegree) in rggcatalog.keys():
+        return rggcatalog['{},{}'.format(nvertices, avgdegree)]
+
+    def f(r):
+        g = igraph.Graph.GRG(nvertices, r)
+        return np.mean(g.degree()) - avgdegree
+
+    return scipy.optimize.brentq(f, 0.0001, 10000)
+
+##########################################################
+def plot_topology(g, coords, toprasterpath, visualorig, plotalpha):
+    """Plot the gradients map
+
+    Args:
+    g(igraph.Graph): graph
+    outgradientspath(str): output path
+    visual(dict): parameters of the layout of the igraph plot
+    """
+
+    visual = visualorig.copy()
+    visual['vertex_size'] = 0
+    gradientscolors = [1, 1, 1]
+    # gradsum = float(np.sum(g.vs['gradient']))
+    # gradientslabels = [ '{:2.3f}'.format(x/gradsum) for x in g.vs['gradient']]
+    igraph.plot(g, target=toprasterpath, layout=coords.tolist(),
+                 **visual)
+
+##########################################################
+def define_plot_layout(mapside, plotzoom):
+    # Square of the center surrounded by radius 3
+    #  (equiv to 99.7% of the points of a gaussian)
+    visual = dict(
+        bbox = (mapside*10*plotzoom, mapside*10*plotzoom),
+        margin = mapside*plotzoom,
+        vertex_size = 5*plotzoom,
+        vertex_shape = 'circle',
+        # vertex_frame_width = 0
+        vertex_frame_width = 0.1*plotzoom,
+        edge_width=1.0
+    )
+    return visual
+
 ##########################################################
 def main():
     info(inspect.stack()[0][3] + '()')
     t0 = time.time()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--graphml', required=True,
-            help='Path to the map in graphml')
-    parser.add_argument('--samplerad', default=-1, type=float,
-            help='Sample radius')
+    parser.add_argument('--graph', required=True,
+            help='Path to the graphml OR wx OR gr')
     parser.add_argument('--bridgeminlen', default=1., type=float,
             help='Minimum length of the bridges')
     parser.add_argument('--spacing', default=.4, type=float,
@@ -506,18 +608,34 @@ def main():
     outcsv = pjoin(args.outdir, 'results.csv')
     maxnedges = np.max(args.nbridges)
 
-    g = parse_graphml(args.graphml, undir=True, samplerad=args.samplerad)
+    if os.path.exists(args.graph):
+        g = parse_graphml(args.graph, undir=True, samplerad=-1)
+    elif args.graph in ['wx', 'gr']:
+        nvertices = 1000
+        avgdegree = 6 # from the 4 cities is 2.81
+        latticethoroidal = False
+        baoutpref = -1
+        wsrewiring = .001
+        wxalpha = .05
+        tmpdir = '/tmp/'
+        g = generate_graph(args.graph, nvertices, avgdegree,
+                                   latticethoroidal, baoutpref, wsrewiring,
+                                   wxalpha, args.seed, tmpdir)
+
+    else:
+        info('Please provide a proper graph argument.')
+        info('Either a graphml path OR waxman OR geometric')
+        return
+
+    visual = define_plot_layout(100, 1)
+    plot_topology(g, g['coords'], pjoin(args.outdir, 'graph.pdf'), visual, .5)
 
     info('sampled nvertices: {}'.format(g.vcount()))
     info('sampled nedges: {}'.format(g.ecount()))
 
     es = choose_new_bridges(g, args.nbridges, args.bridgeminlen)
+    g = analyze_increment_of_bridges(g, es, args.spacing, args.bridgespeed, outcsv)
 
-    nref = 100
-    centerids = np.random.permutation(g.vcount())[:nref]
-    balls = get_neighbourhoods(g, centerids, args.scale)
-    g = analyze_increment_of_bridges(g, es, args.spacing, balls,
-                                     args.bridgespeed, outcsv)
     info('Elapsed time:{}'.format(time.time()-t0))
 
 ##########################################################

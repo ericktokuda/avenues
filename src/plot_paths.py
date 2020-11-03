@@ -203,12 +203,13 @@ def plot_densities_all(localfeats, outdir):
     """Plot histogram of the features"""
     info(inspect.stack()[0][3] + '()')
     dfs = {}
-    dfs['barcelona'] = pd.read_csv('/home/dufresne/temp/bridges/20201016-bridges/barcelona_s1000_n200/results.csv')
-    dfs['dublin'] = pd.read_csv('/home/dufresne/temp/bridges/20201016-bridges/dublin_s1000_n200/results.csv')
-    dfs['manchester'] = pd.read_csv('/home/dufresne/temp/bridges/20201016-bridges/manchester_s1000_n200/results.csv')
-    dfs['paris'] = pd.read_csv('/home/dufresne/temp/bridges/20201016-bridges/paris_s1000_n200/results.csv')
+    sp = '1.00'
+    dfs['bar'] = pd.read_csv('/home/frodo/results/bridges/20201026-4cities/bar_s1000_n200_sp{}/results.csv'.format(sp))
+    dfs['dub'] = pd.read_csv('/home/frodo/results/bridges/20201026-4cities/dub_s1000_n200_sp{}/results.csv'.format(sp))
+    dfs['man'] = pd.read_csv('/home/frodo/results/bridges/20201026-4cities/man_s1000_n200_sp{}/results.csv'.format(sp))
+    dfs['par'] = pd.read_csv('/home/frodo/results/bridges/20201026-4cities/par_s1000_n200_sp{}/results.csv'.format(sp))
 
-    m = len(dfs['barcelona'])
+    m = len(dfs['bar'])
 
     for col1 in localfeats[1:]:
         x = np.zeros(m, dtype=float)
@@ -230,6 +231,7 @@ def plot_densities_all(localfeats, outdir):
             # axs.hist(x, density=True)
             axs.plot(xtest, ytest, label=kk)
         axs.set_xlabel(col1)
+        fig.legend()
         plt.tight_layout()
         plt.savefig(pjoin(outdir, 'all_dens_{}.png'.format(col1)))
         plt.close()
@@ -249,7 +251,7 @@ def plot_pairwise_points(df, localfeats, outdir):
         pathlenorig.append(df[col].loc[0])
 
     y = np.array(pathlennew) - np.array(pathlenorig)
-    
+
     for col1 in localfeats[1:]:
         nrows = 1;  ncols = 1; figscale = 8
         fig, axs = plt.subplots(nrows, ncols,
@@ -261,8 +263,8 @@ def plot_pairwise_points(df, localfeats, outdir):
             # x.append(np.mean(df[col]))
             x.append(df[col].loc[0])
 
-        epsilon = 0.0005
-        inds = np.where(y < -epsilon)[0]
+        epsilon = 0.0
+        inds = np.where(np.abs(y) > epsilon)[0]
         x = np.array(x)[inds]
         y = np.array(y)[inds]
 
@@ -270,7 +272,7 @@ def plot_pairwise_points(df, localfeats, outdir):
         axs.scatter(x, y, alpha=0.3)
         axs.set_xlabel(col1)
         axs.set_ylabel('Delta pathlen')
-        axs.set_title('Pearson:{}'.format(corr))
+        axs.set_title('Pearson:{:.02f}, n:{}'.format(corr, len(inds)))
         plt.tight_layout()
         plt.savefig(pjoin(outdir, 'pair_{}_{}.png'.format(col1, col2)))
         plt.close()
@@ -280,7 +282,6 @@ def get_correlation_table(dfs, localfeats):
     corrs = np.zeros((len(localfeats)-1, len(dfs)), dtype=float)
     for i, l in enumerate(localfeats[1:]):
         for j, df in enumerate(dfs):
-
             # get y axis of the correlation
             pathlenorig = []
             pathlennew = []
@@ -300,21 +301,25 @@ def get_correlation_table(dfs, localfeats):
                 # x.append(np.mean(df[col]))
                 x.append(df[col].loc[0])
 
-            # filter null values
-            epsilon = 0.0005
-            inds = np.where(y < -epsilon)[0]
+            # filter out null values
+            epsilon = 0.0
+            inds = np.where(np.abs(y) > epsilon)[0]
 
             x = np.array(x)[inds]
             y = np.array(y)[inds]
 
             corr, _ = scipy.stats.pearsonr(x, y)
+
+            print(i, j, len(x), corr)
             corrs[i, j] = corr
+
     return corrs
 
 ##########################################################
 def plot_heatmap(localfeats, outdir):
-    templ = '/home/frodo/results/bridges/20201016-4cities/C_s1000_n200/results.csv'
-    cities = ['barcelona', 'dublin', 'manchester', 'paris']
+    # templ = '/home/frodo/results/bridges/20201016-4cities/C_s1000_n200/results.csv'
+    templ = '/home/frodo/results/bridges/20201026-4cities/C_s1000_n200_sp0.50/results.csv'
+    cities = ['bar', 'dub', 'man', 'par']
     mypaths = {c: templ.replace('C', c) for c in cities}
     dfs = [pd.read_csv(p) for p in mypaths.values()]
 
@@ -340,15 +345,43 @@ def plot_heatmap(localfeats, outdir):
             text = ax.text(j, i, '{:.02f}'.format(corrs[i, j]),
                            ha="center", va="center", color="k")
 
-    ax.set_title("Harvest of local farmers (in tons/year)")
+    ax.set_title("Correlation with gain in the avg. short. path length")
     fig.tight_layout()
 
-    # a = np.random.random((2, 2))
-    # print(a)
-    # plt.imshow(a, cmap='hot', interpolation='nearest')
-    # plt.axis('off')
-    # plt.colorbar()
-    outpath = pjoin(outdir, 'foo.png')
+    outpath = pjoin(outdir, 'corr_heatmap.png')
+    plt.savefig(outpath)
+
+##########################################################
+def plot_avg_path_lengths(localfeats, outdir):
+    templ = '/home/frodo/results/bridges/20201026-4cities/C_s1000_n200_spS/results.csv'
+    cities = ['bar', 'dub', 'man', 'par']
+    speeds = ['0.25', '0.50', '0.75', '1.00', '1.50', '2.00', '4.00']
+    # speeds = ['0.50', '0.75', '1.00', '1.50', '2.00']
+
+    W = 640; H = 480
+    fig, ax = plt.subplots(figsize=(W*.01, H*.01), dpi=100)
+    outpath = pjoin(outdir, 'pathlen_speeds.png')
+
+    for c in cities:
+        dfs = []
+        l = 'pathlen'
+
+        avgpathlens = []
+        stdpathlens = []
+        for s in speeds:
+            df = pd.read_csv(templ.replace('C', c).replace('S', s))
+            pathlens = []
+            for col in df.columns:
+                if not col.startswith(l): continue
+                pathlens.append(np.mean(df[col].loc[1:]))
+            avgpathlens.append(np.mean(pathlens))
+            stdpathlens.append(np.std(pathlens))
+
+        ax.errorbar([float(k) for k in speeds], avgpathlens, yerr=stdpathlens,
+                    label=c)
+    ax.set_xlabel('Bridge speed')
+    ax.set_ylabel('Average path length')
+    fig.legend()
     plt.savefig(outpath)
 
 ##########################################################
@@ -373,8 +406,9 @@ def main():
     # plot_densities(df, localfeats, args.outdir)
     # compare_densities(df, localfeats, args.outdir)
     # plot_densities_all(localfeats, args.outdir)
+    # plot_heatmap(localfeats, args.outdir )
     # plot_pairwise_points(df, localfeats, args.outdir )
-    plot_heatmap(localfeats, args.outdir )
+    plot_avg_path_lengths(localfeats, args.outdir)
 
     info('Elapsed time:{}'.format(time.time()-t0))
     info('Output generated in {}'.format(args.outdir))
