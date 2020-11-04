@@ -475,6 +475,14 @@ def get_neighbourhoods_origids(g, centerids, r):
 
 #############################################################
 def get_waxman_params(nvertices, avgdegree, alpha):
+    wxcatalog = {
+        '11132,6,0.01': 0.4426419682443505,
+        '11132,6,0.10': 0.4426419682443505,
+    }
+
+    if '{},{},{:.02f}'.format(nvertices, avgdegree, alpha) in wxcatalog.keys():
+        return wxcatalog['{},{},{:.02f}'.format(nvertices, avgdegree, alpha)], alpha
+
     maxnedges = nvertices * nvertices // 2
     def f(b):
         g = generate_waxman(nvertices, maxnedges, alpha=alpha, beta=b)
