@@ -573,6 +573,18 @@ def define_plot_layout(mapside, plotzoom):
     return visual
 
 ##########################################################
+def scale_coords(g, bbox):
+    """Scale [-1,1] coords to the bbox provided"""
+    info(inspect.stack()[0][3] + '()')
+    xmin, ymin, xmax, ymax = bbox
+    dx = (xmax - xmin) / 2
+    dy = (ymax - ymin) / 2
+    delta = np.array([dx, dy])
+    c0 = [xmin + dx, ymin + dy]
+    coords = g['coords']
+    g['coords'] = c0 + (delta * coords)
+    return g
+##########################################################
 def main():
     info(inspect.stack()[0][3] + '()')
     t0 = time.time()
@@ -599,6 +611,7 @@ def main():
 
     nvertices = 1000 #11132 is the mean of the 4 cities
     avgdegree = 6
+    bboxref = [-6.3861364, 53.3018049, -6.1430295, 53.4100279] # dublin
 
     os.makedirs(args.outdir, exist_ok=True)
     readmepath = create_readme(sys.argv, args.outdir)
@@ -611,6 +624,7 @@ def main():
         g = parse_graphml(args.graph, undir=True, samplerad=-1)
     elif args.graph in ['wx', 'gr']:
         g = generate_graph(args.graph, nvertices, avgdegree, args.wxalpha, args.seed)
+        g = scale_coords(g, bboxref)
     else:
         info('Please provide a proper graph argument.')
         info('Either a graphml path OR waxman OR geometric')
