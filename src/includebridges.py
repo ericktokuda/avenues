@@ -20,7 +20,7 @@ import pickle
 import pandas as pd
 from scipy.spatial import cKDTree
 from itertools import combinations
-from myutils import info, create_readme, graph, plot, geo
+from myutils import info, create_readme, append_to_file, graph, plot, geo
 from sklearn.neighbors import BallTree
 from itertools import combinations
 from optimized import generate_waxman_adj
@@ -481,6 +481,7 @@ def get_waxman_params(nvertices, avgdegree, alpha):
         return np.mean(g.degree()) - avgdegree
 
     beta = scipy.optimize.brentq(f, 0.0001, 1000, xtol=0.00001, rtol=0.01)
+    info('beta:{}'.format(b))
     return beta, alpha
 
 #############################################################
@@ -495,9 +496,7 @@ def generate_waxman(n, maxnedges, alpha, beta, domain=(0, 0, 1, 1)):
     return g
 
 #############################################################
-def generate_graph(topologymodel, nvertices, avgdegree,
-                   latticethoroidal, baoutpref, wsrewiring, wxalpha,
-                   randomseed, tmpdir):
+def generate_graph(topologymodel, nvertices, avgdegree, wxalpha, randomseed):
     info(inspect.stack()[0][3] + '()')
     if topologymodel == 'gr':
         radius = get_rgg_params(nvertices, avgdegree)
@@ -533,6 +532,7 @@ def get_rgg_params(nvertices, avgdegree):
     rggcatalog = {
         '625,6': 0.056865545,
         '10000,6': 0.0139,
+        '11132,6': 0.0131495,
         '22500,6': 0.00925,
     }
 
@@ -547,14 +547,8 @@ def get_rgg_params(nvertices, avgdegree):
 
 ##########################################################
 def plot_topology(g, coords, toprasterpath, visualorig, plotalpha):
-    """Plot the gradients map
-
-    Args:
-    g(igraph.Graph): graph
-    outgradientspath(str): output path
-    visual(dict): parameters of the layout of the igraph plot
-    """
-
+    """Plot the gradients map"""
+    info(inspect.stack()[0][3] + '()')
     visual = visualorig.copy()
     visual['vertex_size'] = 0
     gradientscolors = [1, 1, 1]
@@ -585,13 +579,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--graph', required=True,
             help='Path to the graphml OR wx OR gr')
+    parser.add_argument('--wxalpha', default=.1,
+            help='Waxman alpha')
     parser.add_argument('--bridgeminlen', default=1., type=float,
             help='Minimum length of the bridges')
     parser.add_argument('--spacing', default=.4, type=float,
             help='Spacing between bridge accesses')
     parser.add_argument('--scale', default=.8, type=float,
             help='Neighbourhood scale (to be matched with accessibility)')
-    parser.add_argument('--nbridges', default=1, type=int,
+    parser.add_argument('--nbridges', default=3, type=int,
             help='Number of shortcut connections')
     parser.add_argument('--bridgespeed', default=1.0, type=float,
             help='Speed in bridges')
@@ -600,6 +596,9 @@ def main():
     parser.add_argument('--outdir', default='/tmp/out/',
             help='Output directory')
     args = parser.parse_args()
+
+    nvertices = 1000 #11132 is the mean of the 4 cities
+    avgdegree = 6
 
     os.makedirs(args.outdir, exist_ok=True)
     readmepath = create_readme(sys.argv, args.outdir)
@@ -611,22 +610,13 @@ def main():
     if os.path.exists(args.graph):
         g = parse_graphml(args.graph, undir=True, samplerad=-1)
     elif args.graph in ['wx', 'gr']:
-        nvertices = 1000
-        avgdegree = 6 # from the 4 cities is 2.81
-        latticethoroidal = False
-        baoutpref = -1
-        wsrewiring = .001
-        wxalpha = .05
-        tmpdir = '/tmp/'
-        g = generate_graph(args.graph, nvertices, avgdegree,
-                                   latticethoroidal, baoutpref, wsrewiring,
-                                   wxalpha, args.seed, tmpdir)
-
+        g = generate_graph(args.graph, nvertices, avgdegree, args.wxalpha, args.seed)
     else:
         info('Please provide a proper graph argument.')
         info('Either a graphml path OR waxman OR geometric')
         return
 
+    append_to_file(readmepath, 'vcount:{},ecount:{}'.format(g.vcount(), g.ecount()))
     visual = define_plot_layout(100, 1)
     plot_topology(g, g['coords'], pjoin(args.outdir, 'graph.pdf'), visual, .5)
 
