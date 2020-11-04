@@ -591,7 +591,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--graph', required=True,
             help='Path to the graphml OR wx OR gr')
-    parser.add_argument('--wxalpha', default=.1,
+    parser.add_argument('--wxalpha', default=.1, type=float,
             help='Waxman alpha')
     parser.add_argument('--bridgeminlen', default=1., type=float,
             help='Minimum length of the bridges')
