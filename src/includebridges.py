@@ -481,7 +481,7 @@ def get_waxman_params(nvertices, avgdegree, alpha):
         return np.mean(g.degree()) - avgdegree
 
     beta = scipy.optimize.brentq(f, 0.0001, 1000, xtol=0.00001, rtol=0.01)
-    info('beta:{}'.format(b))
+    info('beta:{}'.format(beta))
     return beta, alpha
 
 #############################################################
