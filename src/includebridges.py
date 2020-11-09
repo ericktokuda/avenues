@@ -590,9 +590,9 @@ def scale_coords(g, bbox):
     delta = np.array([dx, dy])
     c0 = [xmin + dx, ymin + dy]
     coords = g['coords']
+    g['coords'] = c0 + (delta * coords)
     g.vs['x'] = coords[:, 0]
     g.vs['y'] = coords[:, 1]
-    g['coords'] = c0 + (delta * coords)
     return g
 ##########################################################
 def main():
