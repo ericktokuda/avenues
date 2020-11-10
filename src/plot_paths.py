@@ -353,18 +353,18 @@ def plot_heatmap(localfeats, outdir):
 
 ##########################################################
 def plot_avg_path_lengths(localfeats, outdir):
-    templ = '/home/frodo/results/bridges/20201026-4cities/C_s1000_n200_spS/results.csv'
+    templ = '/home/dufresne/temp/bridges/20201026-4cities/C_s1000_n200_spS/results.csv'
     cities = ['bar', 'dub', 'man', 'par']
+    # speeds = ['0.50', '1.00', '2.00']
     speeds = ['0.25', '0.50', '0.75', '1.00', '1.50', '2.00', '4.00']
-    # speeds = ['0.50', '0.75', '1.00', '1.50', '2.00']
 
     W = 640; H = 480
     fig, ax = plt.subplots(figsize=(W*.01, H*.01), dpi=100)
     outpath = pjoin(outdir, 'pathlen_speeds.png')
+    l = 'g_pathlen_mean'
 
     for c in cities:
         dfs = []
-        l = 'pathlen'
 
         avgpathlens = []
         stdpathlens = []
@@ -379,6 +379,31 @@ def plot_avg_path_lengths(localfeats, outdir):
 
         ax.errorbar([float(k) for k in speeds], avgpathlens, yerr=stdpathlens,
                     label=c)
+
+    templ = '/home/dufresne/temp/bridges/20201103-bridges/C_spS/results.csv'
+    # speeds2 = ['0.5', '1.0', '2.0']
+    speeds2 = ['0.25', '0.50', '0.75', '1.00', '1.50', '2.00', '4.00']
+    for c in ['gr', 'wx0.01']:
+        dfs = []
+        # l = 'pathlen'
+
+        avgpathlens = []
+        stdpathlens = []
+        for s in speeds2:
+            filename = templ.replace('C', c).replace('S', s)
+            df = pd.read_csv(filename)
+            
+            pathlens = df.g_pathlen_mean
+            # pathlens = []
+            # for col in df.columns:
+                # if not col.startswith(l): continue
+                # pathlens.append(np.mean(df[col].loc[1:]))
+            avgpathlens.append(np.mean(pathlens))
+            stdpathlens.append(np.std(pathlens))
+
+        ax.errorbar([float(k) for k in speeds2], avgpathlens, yerr=stdpathlens,
+                    label=c)
+
     ax.set_xlabel('Bridge speed')
     ax.set_ylabel('Average path length')
     fig.legend()
@@ -395,7 +420,7 @@ def main():
 
     os.makedirs(args.outdir, exist_ok=True)
 
-    df = pd.read_csv(args.results)
+    # df = pd.read_csv(args.results)
     localfeats = ['pathlen', 'degree', 'betwv', 'divers', 'clucoeff', 'clos']
 
     # plot_global(df, args.outdir)
