@@ -97,7 +97,7 @@ def calculate_edge_len(g, srcid, tgtid):
     """Calculate edge length based on 'x' and 'y' attributes"""
     src = np.array([float(g.vs[srcid]['x']), float(g.vs[srcid]['y'])])
     tgt = np.array([float(g.vs[tgtid]['x']), float(g.vs[tgtid]['y'])])
-    return np.linalg.norm(tgt - src)
+    return geo.haversine(src[0], src[1], tgt[0], tgt[1])
 
 ##########################################################
 def add_wedge(g, srcid, tgtid, etype, bridgespeed, bridgeid=-1):
@@ -529,7 +529,7 @@ def generate_graph(topologymodel, nvertices, avgdegree, wxalpha, randomseed):
 
     for j, e in enumerate(g.es()):
         l = calculate_edge_len(g, e.source, e.target)
-        g.es[j]['length'] = l
+        g.es[j]['length'] = l # It is overwritten by scale_coords
     coords = -1 + 2*(aux - np.min(aux, 0))/(np.max(aux, 0)-np.min(aux, 0)) # minmax
 
     g['coords'] = coords
@@ -589,10 +589,13 @@ def scale_coords(g, bbox):
     dy = (ymax - ymin) / 2
     delta = np.array([dx, dy])
     c0 = [xmin + dx, ymin + dy]
-    coords = g['coords']
-    g['coords'] = c0 + (delta * coords)
+    coords = c0 + (delta * g['coords'])
+    g['coords'] = coords
     g.vs['x'] = coords[:, 0]
     g.vs['y'] = coords[:, 1]
+    for j, e in enumerate(g.es()):
+        l = calculate_edge_len(g, e.source, e.target)
+        g.es[j]['length'] = l
     return g
 ##########################################################
 def main():
