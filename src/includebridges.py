@@ -545,7 +545,7 @@ def main():
             help='Output directory')
     args = parser.parse_args()
 
-    nvertices = 1132 #11132 is the mean of the 4 cities
+    nvertices = 11132 #11132 is the mean of the 4 cities
     avgdegree = 6
     bboxref = [-6.3861364, 53.3018049, -6.1430295, 53.4100279] # dublin
 
