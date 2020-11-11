@@ -52,14 +52,7 @@ def parse_graphml(graphmlpath, undir=True, samplerad=-1):
     g.es['type'] = ORIGINAL
     g.es['bridgeid'] = -1
     g.es['speed'] = 1
-
-    origid2sampleid = {}
-    for i, origid in enumerate(g.vs['origid']):
-        origid2sampleid[origid] = i
-
-    g['origid2sampleid'] = origid2sampleid
     g['coords'] = np.array([(x, y) for x, y in zip(g.vs['x'], g.vs['y'])])
-
     return g
 
 ##########################################################
@@ -202,7 +195,7 @@ def partition_edges(g, endpoints, spacing, bridgeid, bridgespeed, nnearest=1):
     return g
 
 ##########################################################
-def calculate_avg_path_length(g, bridgespeed, weighted=False):
+def calculate_avg_path_length(g, brspeed, weighted=False):
     """Calculate avg path length of @g.
     Calling all at once, without the loop on the vertices, it crashes
     for large graphs """
@@ -214,24 +207,22 @@ def calculate_avg_path_length(g, bridgespeed, weighted=False):
         raise Exception('This method considers an *undirected* graph')
     elif g.vcount() < 2: return 0, 0
 
-    if weighted: w = np.array(g.es['length']) / bridgespeed
-    else: w = np.array([1] * g.ecount())
+    w = np.ones(g.ecount(), dtype=float)
+    if weighted:
+        bridgeids = np.where(np.array(g.es['type']) == BRIDGE)[0]
+        if len(bridgeids) > 0:
+            w[bridgeids] = np.array(g.es['length'])[bridgeids] / brspeed
 
     for srcid in range(g['vcountsampled']): #Assuming an undirected graph
         tgts = list(range(srcid + 1, g['vcountsampled']))
 
-        w = np.array(g.es['length']) / bridgespeed
         spaths =  g.shortest_paths(source=srcid, target=tgts,
-            weights=w, mode='ALL')
+                                   weights=w, mode='ALL')
 
-        for tgtid, l in zip(tgts, spaths[0]): pathlens[(srcid, tgtid)] = l
+        for tgtid, l in zip(tgts, spaths[0]):
+            pathlens[(srcid, tgtid)] = l
 
     return pathlens
-
-##########################################################
-def calculate_local_avgpathlen(g, ballids, pathlens):
-    combs = list(combinations(ballids, 2))
-    return np.array([ pathlens[comb] for comb in combs ])
 
 ##########################################################
 def extract_features_global(g, pathlens, degrees, betwv, clucoeff, divers, clos):
@@ -260,37 +251,6 @@ def extract_features_global(g, pathlens, degrees, betwv, clucoeff, divers, clos)
             g_divers_std = np.std(divers_),
             g_clos_mean = np.mean(clos),
             g_clos_std = np.std(clos),
-            )
-
-##########################################################
-def extract_features_local(g, ballids, pathlens, degrees, betwv, clucoeff, divers, clos):
-    """Extract local features from ballids"""
-
-    pathlens = calculate_local_avgpathlen(g, ballids, pathlens)
-
-    degrees_ = degrees[ballids]
-    betwv_ = betwv[ballids]
-    clucoeff_ = clucoeff[ballids]
-    clucoeff_ = clucoeff_[~np.isnan(clucoeff_)]
-    # g.similarity_jaccard(vertices=ballids)
-
-    divers_ = divers[ballids]
-    divers_ = divers_[~np.isnan(divers_)]
-    divers_ = divers_[np.isfinite(divers_)]
-
-    # induced = induced_by(g, ballids)
-    # assort = induced.assortativity(induced.degree(), directed=False)
-
-    clos_ = clos[ballids]
-
-    return dict(
-            pathlen = np.mean(pathlens),
-            degree = np.mean(degrees_),
-            betwv = np.mean(betwv_),
-            clucoeff = np.mean(clucoeff_),
-            divers = np.mean(divers_),
-            # assort = assort,
-            clos = np.mean(clos_)
             )
 
 ##########################################################
@@ -379,11 +339,6 @@ def plot_map(g, outdir, vertices=False):
     plt.savefig(pjoin(outdir, 'map.pdf'))
 
 ##########################################################
-def choose_bridges_random(g, nnewedges, available):
-    inds = np.random.randint(len(available), size=nnewedges) # random
-    return available[inds]
-
-##########################################################
 def choose_bridges_random_minlen(g, nnewedges, available, minlen):
     coords = g['coords']
     inds = np.arange(len(available))
@@ -398,24 +353,6 @@ def choose_bridges_random_minlen(g, nnewedges, available, minlen):
         if l > minlen: bridges.append(available[ind])
         if len(bridges) == nnewedges: break
 
-    return bridges
-
-##########################################################
-def choose_bridges_acc(g, nnewedges, available):
-    accpath = '/home/frodo/results/bridges/20200729-accessibs/sp_undirected_acc05.txt'
-    acc = [float(x) for x in open(accpath).read().strip().split('\n')]
-    g.vs['acc'] = acc
-    aux = np.argsort(g.vs['acc']) # accessibility
-    quant = int(g.vcount() * .25)
-    if quant < 2*nnewedges: quant *= 2
-    srcs = aux[:quant]
-    tgts = aux[-quant:]
-
-    bridges = []
-    for i in range(quant):
-        if len(bridges) == nnewedges: return bridges
-        if [srcs[i], tgts[i]] not in available: continue
-        bridges.append([srcs[i], tgts[i]])
     return bridges
 
 ##########################################################
@@ -437,18 +374,8 @@ def choose_new_bridges(g, nnewedges, minlen=-1):
 
     available = np.array(list(all.difference(es))) # all - existing
 
-    # return choose_bridges_acc(g, available)
-    # return choose_bridges_random(g, nnewedges, available)
     return choose_bridges_random_minlen(g, nnewedges,
             available, minlen)
-
-##########################################################
-def sampleid2origid(g, sampleids):
-    return g.vs[list(sampleids)]['origid']
-
-##########################################################
-def origid2sampleid(g, origids):
-    return [ g.vs['origid2sampleid'][list(origid)] for origid in origids ]
 
 ##########################################################
 def get_neighbourhoods(g, centerids, r):
@@ -527,12 +454,7 @@ def generate_graph(topologymodel, nvertices, avgdegree, wxalpha, randomseed):
     g.es['bridgeid'] = -1
     g.es['speed'] = 1
 
-    for j, e in enumerate(g.es()):
-        l = calculate_edge_len(g, e.source, e.target)
-        g.es[j]['length'] = l # It is overwritten by scale_coords
-    coords = -1 + 2*(aux - np.min(aux, 0))/(np.max(aux, 0)-np.min(aux, 0)) # minmax
-
-    g['coords'] = coords
+    g['coords'] = -1 + 2*(aux - np.min(aux, 0))/(np.max(aux, 0)-np.min(aux, 0))
     return g
 
 ##########################################################
@@ -593,6 +515,7 @@ def scale_coords(g, bbox):
     g['coords'] = coords
     g.vs['x'] = coords[:, 0]
     g.vs['y'] = coords[:, 1]
+
     for j, e in enumerate(g.es()):
         l = calculate_edge_len(g, e.source, e.target)
         g.es[j]['length'] = l
@@ -622,7 +545,7 @@ def main():
             help='Output directory')
     args = parser.parse_args()
 
-    nvertices = 11132 #11132 is the mean of the 4 cities
+    nvertices = 1132 #11132 is the mean of the 4 cities
     avgdegree = 6
     bboxref = [-6.3861364, 53.3018049, -6.1430295, 53.4100279] # dublin
 
