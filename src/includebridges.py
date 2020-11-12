@@ -42,7 +42,7 @@ def parse_graphml(graphmlpath, undir=True, samplerad=-1):
     g = graph.simplify_graphml(graphmlpath, directed=False)
     g = sample_circle_from_graph(g, samplerad)
     g = g.components(mode='weak').giant()
-    g['count'] = g.vcount()
+    g['vcount'] = g.vcount()
     g['ecount'] = g.ecount()
 
     g.vs['type'] = ORIGINAL
