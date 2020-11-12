@@ -10,7 +10,8 @@ import inspect
 
 import sys
 import numpy as np
-import matplotlib; matplotlib.use('Agg')
+# import matplotlib; matplotlib.use('Agg')
+import matplotlib
 import matplotlib.pyplot as plt
 from myutils import info, create_readme
 import pandas as pd
@@ -353,15 +354,18 @@ def plot_heatmap(localfeats, outdir):
 
 ##########################################################
 def plot_avg_path_lengths(localfeats, outdir):
-    templ = '/home/dufresne/temp/bridges/20201026-4cities/C_s1000_n200_spS/results.csv'
-    cities = ['bar', 'dub', 'man', 'par']
+    # templ = '/home/frodo/results/bridges/20201026-4cities/C_s1000_n200_spS/results.csv'
+    templ = '/home/frodo/results/bridges/20201111-bridges/C_spS/results.csv'
+    cities = ['barcelona', 'dublin', 'manchester', 'paris', 'gr',
+              # 'wx0.001', 'wx0.005', 'wx0.010']
+              'wx0.005']
     # speeds = ['0.50', '1.00', '2.00']
-    speeds = ['0.25', '0.50', '0.75', '1.00', '1.50', '2.00', '4.00']
+    speeds = ['0.25', '0.5', '0.75', '1.0', '1.5', '2.0', '4.0']
 
     W = 640; H = 480
     fig, ax = plt.subplots(figsize=(W*.01, H*.01), dpi=100)
     outpath = pjoin(outdir, 'pathlen_speeds.png')
-    l = 'g_pathlen_mean'
+    col = 'g_pathlen_mean'
 
     for c in cities:
         dfs = []
@@ -370,43 +374,18 @@ def plot_avg_path_lengths(localfeats, outdir):
         stdpathlens = []
         for s in speeds:
             df = pd.read_csv(templ.replace('C', c).replace('S', s))
-            pathlens = []
-            for col in df.columns:
-                if not col.startswith(l): continue
-                pathlens.append(np.mean(df[col].loc[1:]))
+            pathlens = df[col].loc[1:] # Idx 0 is without bridges
+            pathlens /= df[col].loc[0]
             avgpathlens.append(np.mean(pathlens))
             stdpathlens.append(np.std(pathlens))
 
         ax.errorbar([float(k) for k in speeds], avgpathlens, yerr=stdpathlens,
                     label=c)
 
-    templ = '/home/dufresne/temp/bridges/20201103-bridges/C_spS/results.csv'
-    # speeds2 = ['0.5', '1.0', '2.0']
-    speeds2 = ['0.25', '0.50', '0.75', '1.00', '1.50', '2.00', '4.00']
-    for c in ['gr', 'wx0.01']:
-        dfs = []
-        # l = 'pathlen'
-
-        avgpathlens = []
-        stdpathlens = []
-        for s in speeds2:
-            filename = templ.replace('C', c).replace('S', s)
-            df = pd.read_csv(filename)
-            
-            pathlens = df.g_pathlen_mean
-            # pathlens = []
-            # for col in df.columns:
-                # if not col.startswith(l): continue
-                # pathlens.append(np.mean(df[col].loc[1:]))
-            avgpathlens.append(np.mean(pathlens))
-            stdpathlens.append(np.std(pathlens))
-
-        ax.errorbar([float(k) for k in speeds2], avgpathlens, yerr=stdpathlens,
-                    label=c)
-
     ax.set_xlabel('Bridge speed')
-    ax.set_ylabel('Average path length')
+    ax.set_ylabel('Relative average path length')
     fig.legend()
+    # plt.show()
     plt.savefig(outpath)
 
 ##########################################################
