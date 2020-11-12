@@ -525,7 +525,7 @@ def main():
             help='Output directory')
     args = parser.parse_args()
 
-    nvertices = 1000 #11132 is the mean of the 4 cities
+    nvertices = 11132 #11132 is the mean of the 4 cities
     avgdegree = 6
 
     os.makedirs(args.outdir, exist_ok=True)
