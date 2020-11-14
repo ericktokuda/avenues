@@ -15,17 +15,18 @@ from itertools import product
 import matplotlib; matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.collections as mc
+
 import igraph
-import pickle
 import pandas as pd
-from scipy.spatial import cKDTree
-from itertools import combinations
-from myutils import info, create_readme, append_to_file, graph, plot, geo
-from sklearn.neighbors import BallTree
-from itertools import combinations
-from optimized import generate_waxman_adj
 import scipy
+from scipy.spatial import cKDTree
+import itertools
+from itertools import combinations
+from sklearn.neighbors import BallTree
+from sklearn.metrics.pairwise import euclidean_distances
 import pickle as pkl
+from myutils import info, create_readme, append_to_file, graph, plot, geo
+from optimized import generate_waxman_adj
 
 ORIGINAL = 0
 BRIDGE = 1
@@ -89,7 +90,7 @@ def calculate_dist(coords, srcid, tgtid, realcoords):
     # tgt = np.array([float(g.vs[tgtid]['x']), float(g.vs[tgtid]['y'])])
     src = coords[srcid, :]
     tgt = coords[tgtid, :]
-    if realcoords: l = geo.haversine(src[0], src[1], tgt[0], tgt[1])
+    if realcoords: l = geo.haversine(src, tgt)
     else: l = np.linalg.norm(tgt - src)
     return l
 
@@ -99,7 +100,7 @@ def add_wedge(g, srcid, tgtid, etype, bridgespeed, bridgeid=-1):
     eid = g.ecount() - 1
     lon1, lat1 = float(g.vs[srcid]['x']), float(g.vs[srcid]['y'])
     lon2, lat2 = float(g.vs[tgtid]['x']), float(g.vs[tgtid]['y'])
-    g.es[eid]['length'] = geo.haversine(lon1, lat1, lon2, lat2)
+    g.es[eid]['length'] = geo.haversine([lon1, lat1], [lon2, lat2])
     g.es[eid]['bridgeid'] = bridgeid
     g.es[eid]['speed'] = bridgespeed
     return g
@@ -113,7 +114,7 @@ def add_detour_route(g, edge, origtree, spacing, bridgeid, nnearest):
     srcid, tgtid = edge
     src = coords[srcid]
     tgt = coords[tgtid]
-    vnorm = geo.haversine(src[0], src[1], tgt[0], tgt[1])
+    vnorm = geo.haversine(src, tgt)
     versor = v / vnorm
 
     d = spacing
@@ -147,7 +148,7 @@ def add_bridge(g, edge, origtree, spacing, bridgeid, nnearest, bridgespeed):
     src = coords[srcid]
     tgt = coords[tgtid]
     v = tgt - src
-    vnorm = geo.haversine(src[0], src[1], tgt[0], tgt[1])
+    vnorm = geo.haversine(src, tgt)
     versor = v / vnorm
 
     lastpid = srcid
@@ -338,24 +339,36 @@ def choose_bridges_random_minlen(g, nnewedges, available, minlen):
     return bridges
 
 ##########################################################
-def choose_new_bridges(g, nnewedges, minlen=-1):
+def choose_new_bridges(g, nnewedges, length, eps=-1):
     """Choose new edges. Multiple edges are not allowed.
     We compute the set difference between all possible edges
     and the existing ones."""
     info(inspect.stack()[0][3] + '()')
 
     # All possible edges
-    all = set(list(combinations(np.arange(g.vcount()), 2)))
-    es = [[e.source, e.target] for e in list(g.es)]
+    l1 = length - eps
+    l2 = length + eps
+    coords = g['coords']
+    # dists = euclidean_distances(coords, coords)
+    combs, dists = geo.haversine_all(coords)
+    withinrange = ((dists > l1) & (dists < l2))
+    combs = combs[withinrange]
+    inds = (combs[:, 0], combs[:, 1])
+    adj1 = np.zeros((g.vcount(), g.vcount()), dtype=int)
+    adj1[inds] = 1
+    adj2 = (np.array(g.get_adjacency().data)).astype(bool)
 
-    y0 = np.min(es, axis=1).reshape(-1, 1)
-    y1 = np.max(es, axis=1).reshape(-1, 1)
-    es = np.concatenate([y0, y1], axis=1)
-    es = set([(e[0], e[1]) for e in es]) # For faster checks
+    available = np.logical_and(adj1, ~adj2)
+    available = np.where(available == True)
+    m = len(available[0])
+    sampleids = list(range(m))
+    np.random.shuffle(sampleids)
+    sampleids = sampleids[:nnewedges]
 
-    available = np.array(list(all.difference(es))) # all - existing
+    return np.array([ available[0][sampleids], available[1][sampleids]]).T
 
-    return choose_bridges_random_minlen(g, nnewedges, available, minlen)
+    # return choose_bridges_random_minlen(g, nnewedges, available, minlen)
+    # return choose_bridges_given_len(g, nnewedges, available, length)
 
 ##########################################################
 def get_neighbourhoods(g, centerids, r):
@@ -513,10 +526,10 @@ def main():
             help='Path to the graphml OR wx OR gr')
     parser.add_argument('--wxalpha', default=.1, type=float,
             help='Waxman alpha')
-    parser.add_argument('--bridgeminlen', default=.1, type=float,
-            help='Minimum length of the bridges relative to the avg. path length')
+    parser.add_argument('--bridgelen', default=.5, type=float,
+            help='Length of the bridges relative to the avg. path length')
     parser.add_argument('--nbridges', default=3, type=int,
-            help='Number of shortcut connections')
+            help='Number of bridges')
     parser.add_argument('--bridgespeed', default=1.0, type=float,
             help='Speed in bridges')
     parser.add_argument('--seed', default=0, type=int,
@@ -552,14 +565,13 @@ def main():
     info('nvertices: {}'.format(g.vcount()))
     info('nedges: {}'.format(g.ecount()))
 
-    bridgeminlenabs = diam * args.bridgeminlen
-    spacing = bridgeminlenabs * .5
+    spacing = .4
 
     append_to_file(readmepath, 'vcount:{},ecount:{}'.format(g.vcount(), g.ecount()))
-    append_to_file(readmepath, 'diameter:{},bridgeminlenabs:{},spacing:{}'.format(
-        diam, bridgeminlenabs, spacing))
+    append_to_file(readmepath, 'diameter:{},bridgelen:{},spacing:{}'.format(
+        diam, args.bridgelen, spacing))
 
-    es = choose_new_bridges(g, args.nbridges, bridgeminlenabs)
+    es = choose_new_bridges(g, args.nbridges, args.bridgelen, eps=.05)
     g = analyze_increment_of_bridges(g, es, spacing, args.bridgespeed, outcsv)
 
     info('Elapsed time:{}'.format(time.time()-t0))
