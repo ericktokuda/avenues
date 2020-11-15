@@ -355,10 +355,10 @@ def plot_heatmap(localfeats, outdir):
 ##########################################################
 def plot_avg_path_lengths(localfeats, outdir):
     # templ = '/home/frodo/results/bridges/20201026-4cities/C_s1000_n200_spS/results.csv'
-    templ = '/home/frodo/results/bridges/20201111-bridges/C_spS/results.csv'
-    cities = ['barcelona', 'dublin', 'manchester', 'paris', 'gr',
+    templ = '/home/dufresne/temp/20201113-bridges/C_len0.5_spS/results.csv'
+    # cities = ['barcelona', 'dublin', 'manchester', 'paris']
+    cities = ['barcelona']
               # 'wx0.001', 'wx0.005', 'wx0.010']
-              'wx0.005']
     # speeds = ['0.50', '1.00', '2.00']
     speeds = ['0.25', '0.5', '0.75', '1.0', '1.5', '2.0', '4.0']
 
@@ -375,7 +375,7 @@ def plot_avg_path_lengths(localfeats, outdir):
         for s in speeds:
             df = pd.read_csv(templ.replace('C', c).replace('S', s))
             pathlens = df[col].loc[1:] # Idx 0 is without bridges
-            pathlens /= df[col].loc[0]
+            # pathlens /= df[col].loc[0]
             avgpathlens.append(np.mean(pathlens))
             stdpathlens.append(np.std(pathlens))
 
