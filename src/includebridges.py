@@ -386,9 +386,10 @@ def choose_new_bridges(g, nnewedges, length, choice, eps=-1):
         np.random.shuffle(sampleids)
         sampleids = sampleids[:nnewedges]
     elif choice == DEGREE:
-        degrs = np.array(g.degree())
-        weights = degrs[nones]
-        sampleids = weighted_random_sampling_n(list(range(m)), weights, n)
+        # TODO: preference of each vertex or of both
+        weights = np.array(g.degree())
+        sampleids = weighted_random_sampling_n(list(range(g.vcount())),
+                weights, nnewedges)
 
     return np.array([ available[0][sampleids], available[1][sampleids]]).T
 
@@ -596,7 +597,7 @@ def main():
     append_to_file(readmepath, 'diameter:{},bridgelen:{},spacing:{}'.format(
         diam, args.bridgelen, spacing))
 
-    es = choose_new_bridges(g, args.nbridges, args.bridgelen, DEGREE, eps=.05)
+    es = choose_new_bridges(g, args.nbridges, args.bridgelen, UNIFORM, eps=.05)
     g = analyze_increment_of_bridges(g, es, spacing, args.bridgespeed, outcsv)
 
     info('Elapsed time:{}'.format(time.time()-t0))
