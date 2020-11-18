@@ -28,10 +28,15 @@ import pickle as pkl
 from myutils import info, create_readme, append_to_file, graph, plot, geo
 from optimized import generate_waxman_adj
 
+#############################################################
 ORIGINAL = 0
 BRIDGE = 1
 BRIDGEACC = 2
-
+############################################################# BRIDGE LOCATION
+UNIFORM = 0
+DEGREE = 1
+BETWV = 2
+CLUCOEFF = 3
 ##########################################################
 def parse_graphml(graphmlpath, undir=True, samplerad=-1):
     """Read graphml file to igraph object and dump it to @pklpath
@@ -339,7 +344,21 @@ def choose_bridges_random_minlen(g, nnewedges, available, minlen):
     return bridges
 
 ##########################################################
-def choose_new_bridges(g, nnewedges, length, eps=-1):
+def weighted_random_sampling_n(items, weights, n):
+    item = items.copy(); weights = weights.copy()
+    sample = np.zeros(n, dtype=int)
+    inds = list(range(len(items)))
+
+    for i in range(n):
+        sampleidx = weighted_random_sampling(items, weights, return_idx=True)
+        sample[i] = items[sampleidx]
+        items = np.delete(items, sampleidx)
+        weights = np.delete(weights, sampleidx)
+
+    return sample
+
+##########################################################
+def choose_new_bridges(g, nnewedges, length, choice, eps=-1):
     """Choose new edges. Multiple edges are not allowed.
     We compute the set difference between all possible edges
     and the existing ones."""
@@ -361,9 +380,15 @@ def choose_new_bridges(g, nnewedges, length, eps=-1):
     available = np.logical_and(adj1, ~adj2)
     available = np.where(available == True)
     m = len(available[0])
-    sampleids = list(range(m))
-    np.random.shuffle(sampleids)
-    sampleids = sampleids[:nnewedges]
+
+    if choice == UNIFORM:
+        sampleids = list(range(m))
+        np.random.shuffle(sampleids)
+        sampleids = sampleids[:nnewedges]
+    elif choice == DEGREE:
+        degrs = np.array(g.degree())
+        weights = degrs[nones]
+        sampleids = weighted_random_sampling_n(list(range(m)), weights, n)
 
     return np.array([ available[0][sampleids], available[1][sampleids]]).T
 
@@ -571,7 +596,7 @@ def main():
     append_to_file(readmepath, 'diameter:{},bridgelen:{},spacing:{}'.format(
         diam, args.bridgelen, spacing))
 
-    es = choose_new_bridges(g, args.nbridges, args.bridgelen, eps=.05)
+    es = choose_new_bridges(g, args.nbridges, args.bridgelen, DEGREE, eps=.05)
     g = analyze_increment_of_bridges(g, es, spacing, args.bridgespeed, outcsv)
 
     info('Elapsed time:{}'.format(time.time()-t0))
