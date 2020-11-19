@@ -344,6 +344,23 @@ def choose_bridges_random_minlen(g, nnewedges, available, minlen):
     return bridges
 
 ##########################################################
+def weighted_random_sampling(items, weights, return_idx=False):
+    n = len(items)
+    cumsum = np.cumsum(weights)
+    cumsumnorm = cumsum / cumsum[-1]
+    x = np.random.rand()
+
+    for i in range(n):
+        if x < cumsumnorm[i]:
+            if return_idx: return i
+            else: return items[i]
+
+    info('Something wrong x:{}'.format(x))
+
+    if return_idx: return -1
+    else: return items[-1]
+
+##########################################################
 def weighted_random_sampling_n(items, weights, n):
     item = items.copy(); weights = weights.copy()
     sample = np.zeros(n, dtype=int)
@@ -388,7 +405,8 @@ def choose_new_bridges(g, nnewedges, length, choice, eps=-1):
     elif choice == DEGREE:
         # weights will be given by the degree of one of the vertices
         headortail = np.random.randint(2, size=m)
-        refvertices = (np.array(available).T)[:, headortail]
+        yinds = list(range(len(headortail)))
+        refvertices = np.array(available)[(headortail, yinds)]
         weights = np.array(g.degree(refvertices))
         sampleids = weighted_random_sampling_n(list(range(m)),
                 weights, nnewedges)
