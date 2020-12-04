@@ -6,7 +6,7 @@ shortest path lengths."""
 
 import argparse
 import time
-import os, sys
+import os, sys, random
 from os.path import join as pjoin
 import inspect
 
@@ -111,7 +111,7 @@ def add_wedge(g, srcid, tgtid, etype, bridgespeed, bridgeid=-1):
     return g
 
 ##########################################################
-def add_detour_route(g, edge, origtree, spacing, bridgeid, nnearest):
+def add_detour_route(g, edge, origtree, spacing, bridgeid, bridgespeed, nnearest):
     """Add shortcut path between @edge vertices"""
     info(inspect.stack()[0][3] + '()')
     orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0]
@@ -120,7 +120,7 @@ def add_detour_route(g, edge, origtree, spacing, bridgeid, nnearest):
     src = coords[srcid]
     tgt = coords[tgtid]
     vnorm = geo.haversine(src, tgt)
-    versor = v / vnorm
+    versor = (tgt - src) / vnorm
 
     d = spacing
 
@@ -130,12 +130,13 @@ def add_detour_route(g, edge, origtree, spacing, bridgeid, nnearest):
 
     while d < vnorm:
         p = src + versor * d # in the worst case,
-        _, ids = origtree.query(p, 3) # the 2 first are the src and tgt
+        _, ids = origtree.query(p, 3) # the 2 first may be the src and tgt
 
         for i, id in enumerate(ids):
-            if orig[id] != srcid and orig[id] != tgtid:
-                g = add_wedge(g, vlast, orig[id], BRIDGEACC, bridgespeed, bridgeid)
-                break
+            if orig[id] == srcid or orig[id] == tgtid: continue
+            g = add_wedge(g, vlast, orig[id], BRIDGEACC, bridgespeed, bridgeid)
+            g.vs[orig[id]]['type'] = BRIDGEACC
+            break
 
         vlast = id
         d += spacing
@@ -187,17 +188,13 @@ def partition_edges(g, endpoints, spacing, bridgeid, bridgespeed, nnearest=1):
     the nearest node """
     # info(inspect.stack()[0][3] + '()')
 
-    vtypes = np.array(g.vs['type'])
-    xs = np.array(g.vs['x'])
-    ys = np.array(g.vs['y'])
-    orig = list(np.where(vtypes != BRIDGEACC)[0])
-
-    coords = [[float(xs[i]), float(ys[i])] for i in orig]
+    coords = g['coords']
 
     origtree = cKDTree(coords)
-    g = add_bridge(g, endpoints, origtree, spacing, bridgeid, nnearest,
-                   bridgespeed)
-    # add_detour_route(g, endpoints, origtree, spacing, nnearest)
+    # g = add_bridge(g, endpoints, origtree, spacing, bridgeid, nnearest,
+                   # bridgespeed)
+    g = add_detour_route(g, endpoints, origtree, spacing, bridgeid,
+                         bridgespeed, nnearest)
 
     return g
 
@@ -268,7 +265,8 @@ def extract_features(g, bridgespeed):
     return features
 
 ##########################################################
-def analyze_increment_of_bridges(gorig, bridges, spacing, bridgespeed, outcsv):
+def analyze_increment_of_bridges(gorig, bridges, spacing, bridgespeed,
+                                 outdir, outcsv):
     """Analyze increment of @bridges to @g. We add entrances/exit spaced
     by @spacing and output to @outcsv."""
     info(inspect.stack()[0][3] + '()')
@@ -285,6 +283,7 @@ def analyze_increment_of_bridges(gorig, bridges, spacing, bridgespeed, outcsv):
         g.vs[es[1]]['type'] = BRIDGE
         g = partition_edges(g, es, spacing, bridgeid, bridgespeed, nnearest=1)
         vals.append(extract_features(g, bridgespeed).values())
+        plot_map(g, outdir, vertices=True)
 
     df = pd.DataFrame(vals, columns=feats.keys())
     df.to_csv(outcsv, index=False)
@@ -314,16 +313,23 @@ def plot_map(g, outdir, vertices=False):
         lines[i, 0, :] = [g.vs[srcid]['x'], g.vs[srcid]['y']]
         lines[i, 1, :] = [g.vs[tgtid]['x'], g.vs[tgtid]['y']]
 
-    lc = mc.LineCollection(lines, colors=ecolours, linewidths=figscale*.1)
+    lc = mc.LineCollection(lines, colors=ecolours, linewidths=figscale*.1,
+                           zorder=0)
     axs[0, 0].add_collection(lc)
     axs[0, 0].autoscale()
 
     if vertices:
         vids = np.where(np.array(g.vs['type']) == ORIGINAL)[0]
-        axs[0, 0].scatter(g['coords'][vids, 0], g['coords'][vids, 1])
+        axs[0, 0].scatter(g['coords'][vids, 0], g['coords'][vids, 1],
+                          s=figscale*.05, c=[palettergb[0]], zorder=5)
+
+        vids = np.where(np.array(g.vs['type']) == BRIDGEACC)[0]
+        axs[0, 0].scatter(g['coords'][vids, 0], g['coords'][vids, 1],
+                          s=figscale*.1, c=[palettergb[1]], zorder=10)
 
     vids = np.where(np.array(g.vs['type']) == BRIDGE)[0]
-    axs[0, 0].scatter(g['coords'][vids, 0], g['coords'][vids, 1], s=figscale*.1, c='k')
+    axs[0, 0].scatter(g['coords'][vids, 0], g['coords'][vids, 1],
+                      s=figscale*.1, c='k', zorder=7)
     # axs[0, 0].set_xticks([])
     # axs[0, 0].set_yticks([])
 
@@ -342,23 +348,6 @@ def choose_bridges_random_minlen(g, nnewedges, available, minlen):
         if len(bridges) == nnewedges: break
 
     return bridges
-
-##########################################################
-def weighted_random_sampling(items, weights, return_idx=False):
-    n = len(items)
-    cumsum = np.cumsum(weights)
-    cumsumnorm = cumsum / cumsum[-1]
-    x = np.random.rand()
-
-    for i in range(n):
-        if x < cumsumnorm[i]:
-            if return_idx: return i
-            else: return items[i]
-
-    info('Something wrong x:{}'.format(x))
-
-    if return_idx: return -1
-    else: return items[-1]
 
 ##########################################################
 def weighted_random_sampling_n(items, weights, n):
@@ -403,12 +392,9 @@ def choose_new_bridges(g, nnewedges, length, choice, eps=-1):
         np.random.shuffle(sampleids)
         sampleids = sampleids[:nnewedges]
     elif choice == DEGREE:
-        # weights will be given by the degree of one of the vertices
-        headortail = np.random.randint(2, size=m)
-        yinds = list(range(len(headortail)))
-        refvertices = np.array(available)[(headortail, yinds)]
-        weights = np.array(g.degree(refvertices))
-        sampleids = weighted_random_sampling_n(list(range(m)),
+        # TODO: preference of each vertex or of both
+        weights = np.array(g.degree())
+        sampleids = weighted_random_sampling_n(list(range(g.vcount())),
                 weights, nnewedges)
 
     return np.array([ available[0][sampleids], available[1][sampleids]]).T
@@ -472,7 +458,7 @@ def generate_waxman(n, maxnedges, alpha, beta, domain=(0, 0, 1, 1)):
     return g
 
 #############################################################
-def generate_graph(topologymodel, nvertices, avgdegree, wxalpha, randomseed):
+def generate_graph(topologymodel, nvertices, avgdegree, wxalpha):
     info(inspect.stack()[0][3] + '()')
     if topologymodel == 'gr':
         radius = get_rgg_params(nvertices, avgdegree)
@@ -578,6 +564,8 @@ def main():
             help='Number of bridges')
     parser.add_argument('--bridgespeed', default=1.0, type=float,
             help='Speed in bridges')
+    parser.add_argument('--samplerad', default=-1, type=float,
+            help='Region of interest radius')
     parser.add_argument('--seed', default=0, type=int,
             help='Randomicity seed')
     parser.add_argument('--outdir', default='/tmp/out/',
@@ -590,15 +578,16 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
     readmepath = create_readme(sys.argv, args.outdir)
 
+    random.seed(args.seed)
     np.random.seed(args.seed)
     outcsv = pjoin(args.outdir, 'results.csv')
     maxnedges = np.max(args.nbridges)
 
     if os.path.exists(args.graph):
-        g = parse_graphml(args.graph, undir=True, samplerad=-1)
+        g = parse_graphml(args.graph, undir=True, samplerad=args.samplerad)
         g['isreal'] = True
     elif args.graph in ['wx', 'gr']:
-        g = generate_graph(args.graph, nvertices, avgdegree, args.wxalpha, args.seed)
+        g = generate_graph(args.graph, nvertices, avgdegree, args.wxalpha)
     else:
         info('Please provide a proper graph argument.')
         info('Either a graphml path OR waxman OR geometric')
@@ -617,8 +606,9 @@ def main():
     append_to_file(readmepath, 'diameter:{},bridgelen:{},spacing:{}'.format(
         diam, args.bridgelen, spacing))
 
-    es = choose_new_bridges(g, args.nbridges, args.bridgelen, DEGREE, eps=.05)
-    g = analyze_increment_of_bridges(g, es, spacing, args.bridgespeed, outcsv)
+    es = choose_new_bridges(g, args.nbridges, args.bridgelen, UNIFORM, eps=.05)
+    g = analyze_increment_of_bridges(g, es, spacing, args.bridgespeed,
+                                     args.outdir, outcsv)
 
     info('Elapsed time:{}'.format(time.time()-t0))
 
