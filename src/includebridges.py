@@ -46,7 +46,7 @@ def parse_graphml(graphmlpath, undir=True, samplerad=-1):
     info(inspect.stack()[0][3] + '()')
 
     g = graph.simplify_graphml(graphmlpath, directed=False)
-    g = sample_circle_from_graph(g, samplerad)
+    g, origids = sample_circle_from_graph(g, samplerad)
     g = g.components(mode='weak').giant()
     g['vcount'] = g.vcount()
     g['ecount'] = g.ecount()
@@ -56,7 +56,7 @@ def parse_graphml(graphmlpath, undir=True, samplerad=-1):
     g.es['bridgeid'] = -1
     g.es['speed'] = 1
     g['coords'] = np.array([(x, y) for x, y in zip(g.vs['x'], g.vs['y'])])
-    return g
+    return g, origids
 
 ##########################################################
 def induced_by(gorig, vs):
@@ -71,11 +71,11 @@ def sample_circle_from_graph(g, radius):
     """Sample a random region from the graph """
     # info(inspect.stack()[0][3] + '()')
 
-    if radius < 0: return g
+    if radius < 0: return g, list(range(g.vcount()))
     coords = np.array([(x, y) for x, y in zip(g.vs['x'], g.vs['y'])])
     c0 = coords[np.random.randint(g.vcount())]
     ids = get_points_inside_region(coords, c0, radius)
-    return induced_by(g, ids)
+    return induced_by(g, ids), ids
 
 ##########################################################
 def get_points_inside_region(coords, c0, radius):
@@ -111,7 +111,8 @@ def add_wedge(g, srcid, tgtid, etype, bridgespeed, bridgeid=-1):
     return g
 
 ##########################################################
-def add_detour_route(g, edge, origtree, spacing, bridgeid, bridgespeed, nnearest):
+def add_detour_route(g, edge, origtree, spacing, bridgeid, bridgespeed,
+                     accessibs, nnearest):
     """Add shortcut path between @edge vertices"""
     info(inspect.stack()[0][3] + '()')
     orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0]
@@ -183,7 +184,8 @@ def add_bridge(g, edge, origtree, spacing, bridgeid, nnearest, bridgespeed):
     return g
 
 ##########################################################
-def partition_edges(g, endpoints, spacing, bridgeid, bridgespeed, nnearest=1):
+def partition_edges(g, endpoints, spacing, bridgeid, bridgespeed, accessibs,
+                    nnearest=1):
     """Partition bridges spaced by @spacing and each new vertex is connected to
     the nearest node """
     # info(inspect.stack()[0][3] + '()')
@@ -194,7 +196,7 @@ def partition_edges(g, endpoints, spacing, bridgeid, bridgespeed, nnearest=1):
     # g = add_bridge(g, endpoints, origtree, spacing, bridgeid, nnearest,
                    # bridgespeed)
     g = add_detour_route(g, endpoints, origtree, spacing, bridgeid,
-                         bridgespeed, nnearest)
+                         bridgespeed, accessibs, nnearest)
 
     return g
 
@@ -265,7 +267,7 @@ def extract_features(g, bridgespeed):
     return features
 
 ##########################################################
-def analyze_increment_of_bridges(gorig, bridges, spacing, bridgespeed,
+def analyze_increment_of_bridges(gorig, bridges, spacing, bridgespeed, accessibs,
                                  outdir, outcsv):
     """Analyze increment of @bridges to @g. We add entrances/exit spaced
     by @spacing and output to @outcsv."""
@@ -281,7 +283,8 @@ def analyze_increment_of_bridges(gorig, bridges, spacing, bridgespeed,
         g = gorig.copy()
         g.vs[es[0]]['type'] = BRIDGE
         g.vs[es[1]]['type'] = BRIDGE
-        g = partition_edges(g, es, spacing, bridgeid, bridgespeed, nnearest=1)
+        g = partition_edges(g, es, spacing, bridgeid, bridgespeed, accessibs,
+                            nnearest=1)
         vals.append(extract_features(g, bridgespeed).values())
         plot_map(g, outdir, vertices=True)
 
@@ -556,6 +559,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--graph', required=True,
             help='Path to the graphml OR wx OR gr')
+    parser.add_argument('--accessibpath',
+            help='Path to the accessib values')
     parser.add_argument('--wxalpha', default=.1, type=float,
             help='Waxman alpha')
     parser.add_argument('--bridgelen', default=.5, type=float,
@@ -580,11 +585,12 @@ def main():
 
     random.seed(args.seed)
     np.random.seed(args.seed)
+
     outcsv = pjoin(args.outdir, 'results.csv')
     maxnedges = np.max(args.nbridges)
 
     if os.path.exists(args.graph):
-        g = parse_graphml(args.graph, undir=True, samplerad=args.samplerad)
+        g, origids = parse_graphml(args.graph, undir=True, samplerad=args.samplerad)
         g['isreal'] = True
     elif args.graph in ['wx', 'gr']:
         g = generate_graph(args.graph, nvertices, avgdegree, args.wxalpha)
@@ -592,6 +598,13 @@ def main():
         info('Please provide a proper graph argument.')
         info('Either a graphml path OR waxman OR geometric')
         return
+
+    if args.accessibpath:
+        with open(args.accessibpath) as fh:
+            accessibs = np.array([float(x) for x in fh.read().strip().split('\n')])
+            accessibs = accessibs[origids]
+    else:
+        accessibs = np.ones(g.vcount(), dtype=float)
 
     diam = g.diameter(weights='length')
     visual = define_plot_layout(100, 1)
@@ -607,7 +620,7 @@ def main():
         diam, args.bridgelen, spacing))
 
     es = choose_new_bridges(g, args.nbridges, args.bridgelen, UNIFORM, eps=.05)
-    g = analyze_increment_of_bridges(g, es, spacing, args.bridgespeed,
+    g = analyze_increment_of_bridges(g, es, spacing, args.bridgespeed, accessibs,
                                      args.outdir, outcsv)
 
     info('Elapsed time:{}'.format(time.time()-t0))
