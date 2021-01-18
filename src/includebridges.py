@@ -80,7 +80,7 @@ def sample_circle_from_graph(g, radius):
 ##########################################################
 def get_points_inside_region(coords, c0, radius):
     """Get points from @df within circle of center @c0 and @radius"""
-    info(inspect.stack()[0][3] + '()')
+    # info(inspect.stack()[0][3] + '()')
 
     bt = BallTree(np.deg2rad(coords), metric='haversine')
     center = np.deg2rad(np.array([c0]))
@@ -145,6 +145,44 @@ def add_detour_route(g, edge, origtree, spacing, bridgeid, bridgespeed,
     return add_wedge(g, vlast, tgtid, BRIDGEACC, bridgespeed, bridgeid)
 
 ##########################################################
+def add_detour_route_accessibility(g, edge, origtree, spacing, bridgeid, bridgespeed,
+                     accessibs, nnearest):
+    """Add shortcut path between @edge vertices"""
+    # info(inspect.stack()[0][3] + '()')
+    orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0] # Real nodes
+    coords = origtree.data
+    srcid, tgtid = edge
+    src = coords[srcid]
+    tgt = coords[tgtid]
+    vnorm = geo.haversine(src, tgt)
+    versor = (tgt - src) / vnorm
+
+    nemptyballs = 0
+
+    d = spacing
+    vlast = srcid
+    while d < vnorm:
+        p = src + versor * d # This vector increases with d
+        ids = get_points_inside_region(coords, p, d/2)
+        if len(ids) == 0: nemptyballs += 1
+        ids = ids[np.argsort(accessibs[ids])] # sort by accessib
+
+        wedgeadded = False
+        for i, id in enumerate(ids):
+            if not id in orig: continue
+            elif id == srcid : continue
+            elif id == tgtid: continue
+            g = add_wedge(g, vlast, id, BRIDGEACC, bridgespeed, bridgeid)
+            g.vs[id]['type'] = BRIDGEACC
+            wedgeadded = True
+            break
+
+        if wedgeadded: vlast = id
+        d += spacing
+
+    return add_wedge(g, vlast, tgtid, BRIDGEACC, bridgespeed, bridgeid), nemptyballs
+
+##########################################################
 def add_bridge(g, edge, origtree, spacing, bridgeid, nnearest, bridgespeed):
     """Add @eid bridge and accesses in @g"""
     # info(inspect.stack()[0][3] + '()')
@@ -188,17 +226,17 @@ def partition_edges(g, endpoints, spacing, bridgeid, bridgespeed, accessibs,
                     nnearest=1):
     """Partition bridges spaced by @spacing and each new vertex is connected to
     the nearest node """
-    # info(inspect.stack()[0][3] + '()')
-
-    coords = g['coords']
-
-    origtree = cKDTree(coords)
+    origtree = cKDTree(g['coords'])
     # g = add_bridge(g, endpoints, origtree, spacing, bridgeid, nnearest,
                    # bridgespeed)
-    g = add_detour_route(g, endpoints, origtree, spacing, bridgeid,
-                         bridgespeed, accessibs, nnearest)
+    # g = add_detour_route(g, endpoints, origtree, spacing, bridgeid,
+                         # bridgespeed, accessibs, nnearest)
+    g, nemptyballs = add_detour_route_accessibility(g, endpoints, origtree,
+                                                    spacing, bridgeid,
+                                                    bridgespeed, accessibs,
+                                                    nnearest)
 
-    return g
+    return g, nemptyballs
 
 ##########################################################
 def calculate_path_lengths(g, brspeed, weighted=False):
@@ -267,7 +305,7 @@ def extract_features(g, bridgespeed):
     return features
 
 ##########################################################
-def analyze_increment_of_bridges(gorig, bridges, spacing, bridgespeed, accessibs,
+def analyze_increment_of_bridges(gorig, bridges, ndetours, bridgespeed, accessibs,
                                  outdir, outcsv):
     """Analyze increment of @bridges to @g. We add entrances/exit spaced
     by @spacing and output to @outcsv."""
@@ -278,27 +316,38 @@ def analyze_increment_of_bridges(gorig, bridges, spacing, bridgespeed, accessibs
     feats = extract_features(gorig, bridgespeed)
     vals = [feats.values()]
 
+    sumemptyballs = 0
+    g = gorig.copy()
     for bridgeid, es in enumerate(bridges):
         info('bridgeid:{}'.format(bridgeid))
-        g = gorig.copy()
-        g.vs[es[0]]['type'] = BRIDGE
-        g.vs[es[1]]['type'] = BRIDGE
-        g = partition_edges(g, es, spacing, bridgeid, bridgespeed, accessibs,
-                            nnearest=1)
+        src, tgt = es
+        g.vs[src]['type'] = g.vs[tgt]['type'] = BRIDGE
+        d = geo.haversine(g['coords'][src, :], g['coords'][tgt, :])
+        spacing = d / ndetours + .001
+        g, nemptyballs = partition_edges(g, es, spacing, bridgeid, bridgespeed,
+                                         accessibs, nnearest=1)
+        sumemptyballs += nemptyballs
+        vtypes = np.array(g.vs['type'])
         vals.append(extract_features(g, bridgespeed).values())
-        plot_map(g, outdir, vertices=True)
+        # plot_map(g, pjoin(outdir, 'map_{:02d}.png'.format(bridgeid)),
+        # vertices=True)
 
+    outpath = pjoin(outdir, 'finalmap.pdf')
+    plot_map(g, outpath, vertices=True)
     df = pd.DataFrame(vals, columns=feats.keys())
     df.to_csv(outcsv, index=False)
-    return g
+    return sumemptyballs
 
 ##########################################################
-def plot_map(g, outdir, vertices=False):
+def plot_map(g, outpath, vertices=False):
     """Plot map g, according to 'type' attrib both in vertices and in edges """
 
     info(inspect.stack()[0][3] + '()')
+    vtypes = np.array(g.vs['type'])
+    etypes = np.array(g.es['type'])
+
     nrows = 1;  ncols = 1
-    figscale = 5
+    figscale = 10
     fig, axs = plt.subplots(nrows, ncols, squeeze=False,
                 figsize=(ncols*figscale, nrows*figscale))
     lines = np.zeros((g.ecount(), 2, 2), dtype=float)
@@ -336,7 +385,7 @@ def plot_map(g, outdir, vertices=False):
     # axs[0, 0].set_xticks([])
     # axs[0, 0].set_yticks([])
 
-    plt.savefig(pjoin(outdir, 'map.pdf'))
+    plt.savefig(outpath)
 
 ##########################################################
 def choose_bridges_random_minlen(g, nnewedges, available, minlen):
@@ -367,15 +416,15 @@ def weighted_random_sampling_n(items, weights, n):
     return sample
 
 ##########################################################
-def choose_new_bridges(g, nnewedges, length, choice, eps=-1):
+def choose_new_bridges(g, nnewedges, length, choice, eps=0):
     """Choose new edges. Multiple edges are not allowed.
     We compute the set difference between all possible edges
     and the existing ones."""
     info(inspect.stack()[0][3] + '()')
 
     # All possible edges
-    l1 = length - eps
-    l2 = length + eps
+    l1 = (1 - eps) * length
+    l2 = (1 + eps) * length
     coords = g['coords']
     # dists = euclidean_distances(coords, coords)
     combs, dists = geo.haversine_all(coords)
@@ -613,15 +662,18 @@ def main():
     info('nvertices: {}'.format(g.vcount()))
     info('nedges: {}'.format(g.ecount()))
 
-    spacing = .4
+    ndetours = 5
 
     append_to_file(readmepath, 'vcount:{},ecount:{}'.format(g.vcount(), g.ecount()))
-    append_to_file(readmepath, 'diameter:{},bridgelen:{},spacing:{}'.format(
-        diam, args.bridgelen, spacing))
+    append_to_file(readmepath, 'diameter:{},bridgelen:{},ndetours:{}'.format(
+        diam, args.bridgelen, ndetours))
 
-    es = choose_new_bridges(g, args.nbridges, args.bridgelen, UNIFORM, eps=.05)
-    g = analyze_increment_of_bridges(g, es, spacing, args.bridgespeed, accessibs,
-                                     args.outdir, outcsv)
+    eps = .1 # 10% of margin
+    es = choose_new_bridges(g, args.nbridges, args.bridgelen, UNIFORM, eps=.1)
+
+    sumemptyballs = analyze_increment_of_bridges(g, es, ndetours, args.bridgespeed,
+                                                 accessibs, args.outdir, outcsv)
+    append_to_file(readmepath, 'sumemptyballs:{}'.format(sumemptyballs))
 
     info('Elapsed time:{}'.format(time.time()-t0))
 
