@@ -157,32 +157,36 @@ def add_detour_route_accessibility(g, edge, origtree, spacing, bridgeid, bridges
     vnorm = geo.haversine(src, tgt)
     versor = (tgt - src) / vnorm
 
-    nemptyballs = 0
+    ninvalidballs = 0
 
     d = spacing
     vlast = srcid
     while d < vnorm:
         p = src + versor * d # This vector increases with d
         ids = get_points_inside_region(coords, p, d/2)
-        if len(ids) == 0: nemptyballs += 1
         ids = ids[np.argsort(accessibs[ids])] # sort by accessib
+
+        lastbutone = True if d > vnorm - spacing else False
 
         wedgeadded = False
         for i, id in enumerate(ids):
             if not id in orig: continue
             elif id == srcid : continue
             elif id == tgtid: continue
-            elif g.are_connected(vlast, id): continue
+            elif g.are_connected(vlast, id): continue # Avoid multiple edges (middle)
+            elif lastbutone and (g.are_connected(id, tgtid)): continue # (end)
 
             g = add_wedge(g, vlast, id, BRIDGEACC, bridgespeed, bridgeid)
             g.vs[id]['type'] = BRIDGEACC
             wedgeadded = True
             break
 
-        if wedgeadded: vlast = id
+        if wedgeadded:
+            vlast = id
+            ninvalidballs += 1
         d += spacing
 
-    return add_wedge(g, vlast, tgtid, BRIDGEACC, bridgespeed, bridgeid), nemptyballs
+    return add_wedge(g, vlast, tgtid, BRIDGEACC, bridgespeed, bridgeid), ninvalidballs
 
 ##########################################################
 def add_bridge(g, edge, origtree, spacing, bridgeid, nnearest, bridgespeed):
@@ -233,12 +237,12 @@ def partition_edges(g, endpoints, spacing, bridgeid, bridgespeed, accessibs,
                    # bridgespeed)
     # g = add_detour_route(g, endpoints, origtree, spacing, bridgeid,
                          # bridgespeed, accessibs, nnearest)
-    g, nemptyballs = add_detour_route_accessibility(g, endpoints, origtree,
+    g, ninvalidballs = add_detour_route_accessibility(g, endpoints, origtree,
                                                     spacing, bridgeid,
                                                     bridgespeed, accessibs,
                                                     nnearest)
 
-    return g, nemptyballs
+    return g, ninvalidballs
 
 ##########################################################
 def calculate_path_lengths(g, brspeed, weighted=False):
@@ -318,7 +322,7 @@ def analyze_increment_of_bridges(gorig, bridges, ndetours, bridgespeed, accessib
     feats = extract_features(gorig, bridgespeed)
     vals = [feats.values()]
 
-    sumemptyballs = 0
+    suminvalidballs = 0
     g = gorig.copy()
     for bridgeid, es in enumerate(bridges):
         info('bridgeid:{}'.format(bridgeid))
@@ -326,9 +330,9 @@ def analyze_increment_of_bridges(gorig, bridges, ndetours, bridgespeed, accessib
         g.vs[src]['type'] = g.vs[tgt]['type'] = BRIDGE
         d = geo.haversine(g['coords'][src, :], g['coords'][tgt, :])
         spacing = d / ndetours + .001
-        g, nemptyballs = partition_edges(g, es, spacing, bridgeid, bridgespeed,
+        g, ninvalidballs = partition_edges(g, es, spacing, bridgeid, bridgespeed,
                                          accessibs, nnearest=1)
-        sumemptyballs += nemptyballs
+        suminvalidballs += ninvalidballs
         vtypes = np.array(g.vs['type'])
         vals.append(extract_features(g, bridgespeed).values())
         # plot_map(g, pjoin(outdir, 'map_{:02d}.png'.format(bridgeid)),
@@ -338,7 +342,7 @@ def analyze_increment_of_bridges(gorig, bridges, ndetours, bridgespeed, accessib
     plot_map(g, outpath, vertices=True)
     df = pd.DataFrame(vals, columns=feats.keys())
     df.to_csv(outcsv, index=False)
-    return sumemptyballs
+    return suminvalidballs
 
 ##########################################################
 def plot_map(g, outpath, vertices=False):
@@ -673,9 +677,9 @@ def main():
     eps = .1 # 10% of margin
     es = choose_new_bridges(g, args.nbridges, args.bridgelen, UNIFORM, eps=.1)
 
-    sumemptyballs = analyze_increment_of_bridges(g, es, ndetours, args.bridgespeed,
+    suminvalidballs = analyze_increment_of_bridges(g, es, ndetours, args.bridgespeed,
                                                  accessibs, args.outdir, outcsv)
-    append_to_file(readmepath, 'sumemptyballs:{}'.format(sumemptyballs))
+    append_to_file(readmepath, 'suminvalidballs:{}'.format(suminvalidballs))
 
     info('Elapsed time:{}'.format(time.time()-t0))
 
