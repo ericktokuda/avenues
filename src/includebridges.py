@@ -184,7 +184,7 @@ def add_detour_route_accessibility(g, edge, origtree, spacing, bridgeid, bridges
             break
 
         if newwedge in ['added', 'existing']: vlast = id
-        if nnewwedge == 'existing': ninvalidballs += 1
+        if newwedge == 'existing': ninvalidballs += 1
         d += spacing
 
     # Last edge
