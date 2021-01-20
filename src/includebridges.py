@@ -168,24 +168,32 @@ def add_detour_route_accessibility(g, edge, origtree, spacing, bridgeid, bridges
 
         lastbutone = True if d > vnorm - spacing else False
 
-        wedgeadded = False
+        newwedge = ''
         for i, id in enumerate(ids):
             if not id in orig: continue
-            elif id == srcid : continue
-            elif id == tgtid: continue
-            elif g.are_connected(vlast, id): continue # Avoid multiple edges (middle)
-            elif lastbutone and (g.are_connected(id, tgtid)): continue # (end)
+            elif id == srcid or id == tgtid: continue
+            # elif g.are_connected(vlast, id): continue # Avoid multiple edges (middle)
+            # elif lastbutone and (g.are_connected(id, tgtid)): continue # (end)
+            if not g.are_connected(vlast, id):
+                g = add_wedge(g, vlast, id, BRIDGEACC, bridgespeed, bridgeid)
+                newwedge = 'added'
+            else:
+                newwedge = 'existing'
 
-            g = add_wedge(g, vlast, id, BRIDGEACC, bridgespeed, bridgeid)
             g.vs[id]['type'] = BRIDGEACC
-            wedgeadded = True
             break
 
-        if wedgeadded: vlast = id
-        else: ninvalidballs += 1
+        if newwedge in ['added', 'existing']: vlast = id
+        if nnewwedge == 'existing': ninvalidballs += 1
         d += spacing
 
-    return add_wedge(g, vlast, tgtid, BRIDGEACC, bridgespeed, bridgeid), ninvalidballs
+    # Last edge
+    if g.are_connected(vlast, tgtid):
+        ninvalidballs += 1
+    else:
+        g = add_wedge(g, vlast, tgtid, BRIDGEACC, bridgespeed, bridgeid)
+
+    return g, ninvalidballs
 
 ##########################################################
 def add_bridge(g, edge, origtree, spacing, bridgeid, nnearest, bridgespeed):
