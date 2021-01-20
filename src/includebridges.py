@@ -172,7 +172,7 @@ def add_detour_route_accessibility(g, edge, origtree, spacing, bridgeid, bridges
             if not id in orig: continue
             elif id == srcid : continue
             elif id == tgtid: continue
-            elif g.get_eid(vlast, id) != -1: continue
+            elif g.are_connected(vlast, id): continue
 
             g = add_wedge(g, vlast, id, BRIDGEACC, bridgespeed, bridgeid)
             g.vs[id]['type'] = BRIDGEACC
