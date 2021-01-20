@@ -181,9 +181,8 @@ def add_detour_route_accessibility(g, edge, origtree, spacing, bridgeid, bridges
             wedgeadded = True
             break
 
-        if wedgeadded:
-            vlast = id
-            ninvalidballs += 1
+        if wedgeadded: vlast = id
+        else: ninvalidballs += 1
         d += spacing
 
     return add_wedge(g, vlast, tgtid, BRIDGEACC, bridgespeed, bridgeid), ninvalidballs
