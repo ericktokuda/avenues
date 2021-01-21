@@ -111,7 +111,7 @@ def add_wedge(g, srcid, tgtid, etype, bridgespeed, bridgeid=-1):
     return g
 
 ##########################################################
-def add_detour_route(g, edge, origtree, spacing, bridgeid, bridgespeed,
+def add_detour(g, edge, origtree, spacing, bridgeid, bridgespeed,
                      accessibs, nnearest):
     """Add shortcut path between @edge vertices"""
     info(inspect.stack()[0][3] + '()')
@@ -145,7 +145,7 @@ def add_detour_route(g, edge, origtree, spacing, bridgeid, bridgespeed,
     return add_wedge(g, vlast, tgtid, BRIDGEACC, bridgespeed, bridgeid)
 
 ##########################################################
-def add_detour_route_accessibility(g, edge, origtree, spacing, bridgeid, bridgespeed,
+def add_detour_accessibility(g, edge, origtree, ndetours, bridgeid, bridgespeed,
                      accessibs, nnearest):
     """Add shortcut path between @edge vertices"""
     # info(inspect.stack()[0][3] + '()')
@@ -157,43 +157,37 @@ def add_detour_route_accessibility(g, edge, origtree, spacing, bridgeid, bridges
     vnorm = geo.haversine(src, tgt)
     versor = (tgt - src) / vnorm
 
-    ninvalidballs = 0
+    d = (vnorm / ndetours)
 
-    d = spacing
     vlast = srcid
-    while d < vnorm:
-        p = src + versor * d # This vector increases with d
+
+    for j in range(ndetours):
+        i = j + 1 # 1-based index
+        p = src + versor * (d * i) # This vector increases with d
         ids = get_points_inside_region(coords, p, d/2)
         ids = ids[np.argsort(accessibs[ids])] # sort by accessib
 
-        lastbutone = True if d > vnorm - spacing else False
-
-        newwedge = ''
+        emptyball = True
         for i, id in enumerate(ids):
-            if not id in orig: continue
-            elif id == srcid or id == tgtid: continue
-            # elif g.are_connected(vlast, id): continue # Avoid multiple edges (middle)
-            # elif lastbutone and (g.are_connected(id, tgtid)): continue # (end)
-            if not g.are_connected(vlast, id):
+            if not id in orig: continue # avoid virtual nodes and loops
+            elif id == vlast or id == srcid or id == tgtid: continue
+            if not g.are_connected(vlast, id): # avoid multiple edges
                 g = add_wedge(g, vlast, id, BRIDGEACC, bridgespeed, bridgeid)
-                newwedge = 'added'
-            else:
-                newwedge = 'existing'
 
             g.vs[id]['type'] = BRIDGEACC
+            emptyball = False
             break
 
-        if newwedge in ['added', 'existing']: vlast = id
-        if newwedge == 'existing': ninvalidballs += 1
-        d += spacing
+        # In case we could not find any vertex inside the ball
+        if emptyball: return g, False
+
+        vlast = id
 
     # Last edge
-    if g.are_connected(vlast, tgtid):
-        ninvalidballs += 1
-    else:
+    if not g.are_connected(vlast, tgtid):
         g = add_wedge(g, vlast, tgtid, BRIDGEACC, bridgespeed, bridgeid)
 
-    return g, ninvalidballs
+    return g, True
 
 ##########################################################
 def add_bridge(g, edge, origtree, spacing, bridgeid, nnearest, bridgespeed):
@@ -235,23 +229,6 @@ def add_bridge(g, edge, origtree, spacing, bridgeid, nnearest, bridgespeed):
     return g
 
 ##########################################################
-def partition_edges(g, endpoints, spacing, bridgeid, bridgespeed, accessibs,
-                    nnearest=1):
-    """Partition bridges spaced by @spacing and each new vertex is connected to
-    the nearest node """
-    origtree = cKDTree(g['coords'])
-    # g = add_bridge(g, endpoints, origtree, spacing, bridgeid, nnearest,
-                   # bridgespeed)
-    # g = add_detour_route(g, endpoints, origtree, spacing, bridgeid,
-                         # bridgespeed, accessibs, nnearest)
-    g, ninvalidballs = add_detour_route_accessibility(g, endpoints, origtree,
-                                                    spacing, bridgeid,
-                                                    bridgespeed, accessibs,
-                                                    nnearest)
-
-    return g, ninvalidballs
-
-##########################################################
 def calculate_path_lengths(g, brspeed, weighted=False):
     """Calculate avg path length of @g.
     Calling all at once, without the loop on the vertices, it crashes
@@ -291,6 +268,7 @@ def extract_features(g, bridgespeed):
     clos = np.array(g.closeness())
 
     pathlensv = np.array(list(pathlens.values()))
+    
     assort = g.assortativity(g.degree(), directed=False)
     clucoeff_ = clucoeff[~np.isnan(clucoeff)]
     divers_ = divers[~np.isnan(divers)]
@@ -329,17 +307,26 @@ def analyze_increment_of_bridges(gorig, bridges, ndetours, bridgespeed, accessib
     feats = extract_features(gorig, bridgespeed)
     vals = [feats.values()]
 
-    suminvalidballs = 0
+    ninvalid = 0
     g = gorig.copy()
     for bridgeid, es in enumerate(bridges):
         info('bridgeid:{}'.format(bridgeid))
+
+        origtree = cKDTree(g['coords'])
+        # g = add_bridge(g, endpoints, origtree, spacing, bridgeid, nnearest,
+                       # bridgespeed)
+        # g = add_detour(g, endpoints, origtree, spacing, bridgeid,
+                             # bridgespeed, accessibs, nnearest)
+        g, succ = add_detour_accessibility(g, es, origtree,
+                ndetours, bridgeid, bridgespeed, accessibs, 1)
+
+        if not succ:
+            ninvalid += 1
+
+            continue
+
         src, tgt = es
         g.vs[src]['type'] = g.vs[tgt]['type'] = BRIDGE
-        d = geo.haversine(g['coords'][src, :], g['coords'][tgt, :])
-        spacing = d / ndetours + .001
-        g, ninvalidballs = partition_edges(g, es, spacing, bridgeid, bridgespeed,
-                                         accessibs, nnearest=1)
-        suminvalidballs += ninvalidballs
         vtypes = np.array(g.vs['type'])
         vals.append(extract_features(g, bridgespeed).values())
         # plot_map(g, pjoin(outdir, 'map_{:02d}.png'.format(bridgeid)),
@@ -349,7 +336,7 @@ def analyze_increment_of_bridges(gorig, bridges, ndetours, bridgespeed, accessib
     plot_map(g, outpath, vertices=True)
     df = pd.DataFrame(vals, columns=feats.keys())
     df.to_csv(outcsv, index=False)
-    return suminvalidballs
+    return ninvalid
 
 ##########################################################
 def plot_map(g, outpath, vertices=False):
@@ -534,6 +521,7 @@ def generate_graph(topologymodel, nvertices, avgdegree, wxalpha):
         g = generate_waxman(nvertices, maxnedges, beta=beta, alpha=alpha)
 
     g['isreal'] = False
+    g['topology'] = topologymodel
     g = g.clusters().giant()
 
     aux = np.array([ [g.vs['x'][i], g.vs['y'][i]] for i in range(g.vcount()) ])
@@ -654,6 +642,7 @@ def main():
     if os.path.exists(args.graph):
         g, origids = parse_graphml(args.graph, undir=True, samplerad=args.samplerad)
         g['isreal'] = True
+        g['topology'] = os.path.basename(args.graph)
     elif args.graph in ['wx', 'gr']:
         g = generate_graph(args.graph, nvertices, avgdegree, args.wxalpha)
     else:
@@ -675,7 +664,7 @@ def main():
     info('nvertices: {}'.format(g.vcount()))
     info('nedges: {}'.format(g.ecount()))
 
-    ndetours = 5
+    ndetours = 5 # number of virtual nodes
 
     append_to_file(readmepath, 'vcount:{},ecount:{}'.format(g.vcount(), g.ecount()))
     append_to_file(readmepath, 'diameter:{},bridgelen:{},ndetours:{}'.format(
@@ -684,9 +673,9 @@ def main():
     eps = .1 # 10% of margin
     es = choose_new_bridges(g, args.nbridges, args.bridgelen, UNIFORM, eps=.1)
 
-    suminvalidballs = analyze_increment_of_bridges(g, es, ndetours, args.bridgespeed,
+    ninvalid = analyze_increment_of_bridges(g, es, ndetours, args.bridgespeed,
                                                  accessibs, args.outdir, outcsv)
-    append_to_file(readmepath, 'suminvalidballs:{}'.format(suminvalidballs))
+    append_to_file(readmepath, 'ninvalid:{}'.format(ninvalid))
 
     info('Elapsed time:{}'.format(time.time()-t0))
 
