@@ -172,7 +172,7 @@ def add_detour_accessibility(g, edge, origtree, ndetours, bridgeid, bridgespeed,
             if not id in orig: continue # avoid virtual nodes and loops
             elif id == vlast or id == srcid or id == tgtid: continue
             if not g.are_connected(vlast, id): # avoid multiple edges
-                g = add_wedge(g, vlast, id, BRIDGEACC, bridgespeed, bridgeid)
+                g = add_wedge(g, vlast, id, BRIDGE, bridgespeed, bridgeid)
 
             g.vs[id]['type'] = BRIDGEACC
             emptyball = False
@@ -268,7 +268,6 @@ def extract_features(g, bridgespeed):
     clos = np.array(g.closeness())
 
     pathlensv = np.array(list(pathlens.values()))
-    
     assort = g.assortativity(g.degree(), directed=False)
     clucoeff_ = clucoeff[~np.isnan(clucoeff)]
     divers_ = divers[~np.isnan(divers)]
