@@ -37,12 +37,13 @@ UNIFORM = 0
 DEGREE = 1
 BETWV = 2
 CLUCOEFF = 3
+
 ##########################################################
 def parse_graphml(graphmlpath, undir=True, samplerad=-1):
     """Read graphml file to igraph object and dump it to @pklpath
-    It gets the major component, and simplify it (neither multi nor self loops)
-    Receives the input path @graphmlpath and dump to @pklpath.
-    Assumes vertex attribs 'x' and 'y' are available """
+    It extracts the major component, and simplify it (neither multiedges nor
+    self loops). It expects the input path @graphmlpath and dumps to @pklpath.
+    It assumes vertex attribs 'x' and 'y' are available."""
     info(inspect.stack()[0][3] + '()')
 
     g = graph.simplify_graphml(graphmlpath, directed=False)
@@ -145,12 +146,12 @@ def add_detour(g, edge, origtree, spacing, bridgeid, bridgespeed,
     return add_wedge(g, vlast, tgtid, BRIDGEACC, bridgespeed, bridgeid)
 
 ##########################################################
-def add_detour_accessibility(g, edge, origtree, ndetours, bridgeid, bridgespeed,
-                     accessibs, nnearest):
+def add_detour_accessibility(g, bridgeid, edge, ndetours, bridgespeed,
+                             accessibs, nnearest):
     """Add shortcut path between @edge vertices"""
     # info(inspect.stack()[0][3] + '()')
     orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0] # Real nodes
-    coords = origtree.data
+    coords = g['coords']
     srcid, tgtid = edge
     src = coords[srcid]
     tgt = coords[tgtid]
@@ -297,8 +298,11 @@ def extract_features(g, bridgespeed):
 ##########################################################
 def analyze_increment_of_bridges(gorig, bridges, ndetours, bridgespeed, accessibs,
                                  outdir, outcsv):
-    """Analyze increment of @bridges to @g. We add entrances/exit spaced
-    by @spacing and output to @outcsv."""
+    """Increment of @bridges to @g and extract features from each state. We add
+    @ndetours entrances/exit, considering the accessibility values (@accessibs)
+    in the choice of the middle nodes. The new edges have different speeds
+    (@bridgespeed) in the shortest paths computation. The results are
+    output to @outcsv."""
     info(inspect.stack()[0][3] + '()')
 
     nbridges = len(bridges)
@@ -306,7 +310,7 @@ def analyze_increment_of_bridges(gorig, bridges, ndetours, bridgespeed, accessib
     feats = extract_features(gorig, bridgespeed)
     vals = [feats.values()]
 
-    ninvalid = 0
+    ninvalid = 0 # Count the number of failure cases
     g = gorig.copy()
     for bridgeid, es in enumerate(bridges):
         info('bridgeid:{}'.format(bridgeid))
@@ -316,16 +320,14 @@ def analyze_increment_of_bridges(gorig, bridges, ndetours, bridgespeed, accessib
                        # bridgespeed)
         # g = add_detour(g, endpoints, origtree, spacing, bridgeid,
                              # bridgespeed, accessibs, nnearest)
-        g, succ = add_detour_accessibility(g, es, origtree,
-                ndetours, bridgeid, bridgespeed, accessibs, 1)
+        g, succ = add_detour_accessibility(g, bridgeid, es, ndetours,
+                                           bridgespeed, accessibs, 1)
 
         if not succ:
             ninvalid += 1
-
             continue
 
-        src, tgt = es
-        g.vs[src]['type'] = g.vs[tgt]['type'] = BRIDGE
+        g.vs[es[0]]['type'] = g.vs[es[1]]['type'] = BRIDGE
         vtypes = np.array(g.vs['type'])
         vals.append(extract_features(g, bridgespeed).values())
         # plot_map(g, pjoin(outdir, 'map_{:02d}.png'.format(bridgeid)),
@@ -415,7 +417,7 @@ def weighted_random_sampling_n(items, weights, n):
     return sample
 
 ##########################################################
-def choose_new_bridges(g, nnewedges, length, choice, eps=0):
+def pick_bridge_endpoints(g, nnewedges, length, choice, eps=0):
     """Choose new edges. Multiple edges are not allowed.
     We compute the set difference between all possible edges
     and the existing ones."""
@@ -510,6 +512,9 @@ def generate_waxman(n, maxnedges, alpha, beta, domain=(0, 0, 1, 1)):
 
 #############################################################
 def generate_graph(topologymodel, nvertices, avgdegree, wxalpha):
+    """Generate graph according to the @topologymodel, @nvertices, @avgdegree
+    and @wxalpha, if applicable. It also compute and store the edges lengths
+    in the 'length' attribute."""
     info(inspect.stack()[0][3] + '()')
     if topologymodel == 'gr':
         radius = get_rgg_params(nvertices, avgdegree)
@@ -621,19 +626,20 @@ def main():
     parser.add_argument('--samplerad', default=-1, type=float,
             help='Region of interest radius')
     parser.add_argument('--seed', default=0, type=int,
-            help='Randomicity seed')
+            help='Random seed')
     parser.add_argument('--outdir', default='/tmp/out/',
             help='Output directory')
     args = parser.parse_args()
 
-    nvertices = 11132 #11132 is the mean of the 4 cities
+    refvcount = 11132 # Mean of the 4 cities
     avgdegree = 6
+    ndetours = 5 # number of virtual nodes
+    bridgeleneps = .1 # 10% of margin
 
     os.makedirs(args.outdir, exist_ok=True)
     readmepath = create_readme(sys.argv, args.outdir)
 
-    random.seed(args.seed)
-    np.random.seed(args.seed)
+    random.seed(args.seed); np.random.seed(args.seed)
 
     outcsv = pjoin(args.outdir, 'results.csv')
     maxnedges = np.max(args.nbridges)
@@ -643,37 +649,34 @@ def main():
         g['isreal'] = True
         g['topology'] = os.path.basename(args.graph)
     elif args.graph in ['wx', 'gr']:
-        g = generate_graph(args.graph, nvertices, avgdegree, args.wxalpha)
+        g = generate_graph(args.graph, refvcount, avgdegree, args.wxalpha)
     else:
         info('Please provide a proper graph argument.')
         info('Either a graphml path OR waxman OR geometric')
         return
 
     if args.accessibpath:
-        with open(args.accessibpath) as fh:
-            accessibs = np.array([float(x) for x in fh.read().strip().split('\n')])
-            accessibs = accessibs[origids]
+        fh = open(args.accessibpath)
+        accessibs = np.array([float(x) for x in fh.read().strip().split('\n')])
+        accessibs = accessibs[origids]
+        fh.close()
     else:
         accessibs = np.ones(g.vcount(), dtype=float)
 
-    diam = g.diameter(weights='length')
     visual = define_plot_layout(100, 1)
     plot_topology(g, g['coords'], pjoin(args.outdir, 'graph.pdf'), visual, .5)
 
-    info('nvertices: {}'.format(g.vcount()))
-    info('nedges: {}'.format(g.ecount()))
-
-    ndetours = 5 # number of virtual nodes
+    info('nvertices: {}, nedges:{}'.format(g.vcount(), g.ecount()))
 
     append_to_file(readmepath, 'vcount:{},ecount:{}'.format(g.vcount(), g.ecount()))
     append_to_file(readmepath, 'diameter:{},bridgelen:{},ndetours:{}'.format(
-        diam, args.bridgelen, ndetours))
+        g.diameter(weights='length'), args.bridgelen, ndetours))
 
-    eps = .1 # 10% of margin
-    es = choose_new_bridges(g, args.nbridges, args.bridgelen, UNIFORM, eps=.1)
+    es = pick_bridge_endpoints(g, args.nbridges, args.bridgelen, UNIFORM,
+                               eps=bridgeleneps)
 
     ninvalid = analyze_increment_of_bridges(g, es, ndetours, args.bridgespeed,
-                                                 accessibs, args.outdir, outcsv)
+                                            accessibs, args.outdir, outcsv)
     append_to_file(readmepath, 'ninvalid:{}'.format(ninvalid))
 
     info('Elapsed time:{}'.format(time.time()-t0))
