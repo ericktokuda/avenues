@@ -150,7 +150,7 @@ def add_detour_accessibility(g, bridgeid, edge, ndetours, bridgespeed,
                              accessibs, nnearest):
     """Add shortcut path between @edge vertices"""
     # info(inspect.stack()[0][3] + '()')
-    orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0] # Real nodes
+    # orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0] # Real nodes
     coords = g['coords']
     srcid, tgtid = edge
     src = coords[srcid]
@@ -160,20 +160,21 @@ def add_detour_accessibility(g, bridgeid, edge, ndetours, bridgespeed,
 
     d = (vnorm / ndetours)
 
-    vlast = srcid
+    lastid = srcid # Last vertex of the new bridge
 
     for j in range(ndetours):
         i = j + 1 # 1-based index
-        p = src + versor * (d * i) # This vector increases with d
+        p = src + versor * (d * i) # This vector p increases with d
         ids = get_points_inside_region(coords, p, d/2)
-        ids = ids[np.argsort(accessibs[ids])] # sort by accessib
+        ids = ids[np.argsort(accessibs[ids])] # Sort by accessib
 
         emptyball = True
-        for i, id in enumerate(ids):
-            if not id in orig: continue # avoid virtual nodes and loops
-            elif id == vlast or id == srcid or id == tgtid: continue
-            if not g.are_connected(vlast, id): # avoid multiple edges
-                g = add_wedge(g, vlast, id, BRIDGE, bridgespeed, bridgeid)
+        for i, id in enumerate(ids): #TODO: accessibs in ascending order
+            # if not (id in orig): continue # Avoid virtual nodes and loops
+            if id == lastid or id == srcid or id == tgtid: continue
+
+            if not g.are_connected(lastid, id): # Avoid multi-edges
+                g = add_wedge(g, lastid, id, BRIDGE, bridgespeed, bridgeid)
 
             g.vs[id]['type'] = BRIDGEACC
             emptyball = False
@@ -182,11 +183,11 @@ def add_detour_accessibility(g, bridgeid, edge, ndetours, bridgespeed,
         # In case we could not find any vertex inside the ball
         if emptyball: return g, False
 
-        vlast = id
+        lastid = id
 
-    # Last edge
-    if not g.are_connected(vlast, tgtid):
-        g = add_wedge(g, vlast, tgtid, BRIDGEACC, bridgespeed, bridgeid)
+    # Last segment of the bridge
+    if not g.are_connected(lastid, tgtid):
+        g = add_wedge(g, lastid, tgtid, BRIDGEACC, bridgespeed, bridgeid)
 
     return g, True
 
@@ -315,7 +316,7 @@ def analyze_increment_of_bridges(gorig, bridges, ndetours, bridgespeed, accessib
     for bridgeid, es in enumerate(bridges):
         info('bridgeid:{}'.format(bridgeid))
 
-        origtree = cKDTree(g['coords'])
+        # origtree = cKDTree(g['coords'])
         # g = add_bridge(g, endpoints, origtree, spacing, bridgeid, nnearest,
                        # bridgespeed)
         # g = add_detour(g, endpoints, origtree, spacing, bridgeid,
@@ -418,7 +419,9 @@ def weighted_random_sampling_n(items, weights, n):
 
 ##########################################################
 def pick_bridge_endpoints(g, nnewedges, length, choice, eps=0):
-    """Choose new edges. Multiple edges are not allowed.
+    """Choose the bridge endpoins. Multiple edges are not allowed.
+    We consider @nnewedges of extension @length (up to @eps variation)
+    and with UNIFORM or DEGREE -guided @choice.
     We compute the set difference between all possible edges
     and the existing ones."""
     info(inspect.stack()[0][3] + '()')
@@ -433,8 +436,8 @@ def pick_bridge_endpoints(g, nnewedges, length, choice, eps=0):
     combs = combs[withinrange]
     inds = (combs[:, 0], combs[:, 1])
     adj1 = np.zeros((g.vcount(), g.vcount()), dtype=int)
-    adj1[inds] = 1
-    adj2 = (np.array(g.get_adjacency().data)).astype(bool)
+    adj1[inds] = 1 # Potential edges
+    adj2 = (np.array(g.get_adjacency().data)).astype(bool) # Existing edges
 
     available = np.logical_and(adj1, ~adj2)
     available = np.where(available == True)
@@ -445,7 +448,9 @@ def pick_bridge_endpoints(g, nnewedges, length, choice, eps=0):
         np.random.shuffle(sampleids)
         sampleids = sampleids[:nnewedges]
     elif choice == DEGREE:
-        # TODO: preference of each vertex or of both
+        # TODO: I am not favoring the choice based on the vertex degree
+        # because the obtained indices (@sampleids) are used as indices
+        # of the potential edges (@available) 
         weights = np.array(g.degree())
         sampleids = weighted_random_sampling_n(list(range(g.vcount())),
                 weights, nnewedges)
