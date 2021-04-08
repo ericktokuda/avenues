@@ -623,7 +623,7 @@ def main():
     parser.add_argument('--wxalpha', default=.1, type=float,
             help='Waxman alpha')
     parser.add_argument('--bridgelen', default=.5, type=float,
-            help='Length of the bridges relative to the avg. path length')
+            help='Length of the bridges (km)')
     parser.add_argument('--nbridges', default=3, type=int,
             help='Number of bridges')
     parser.add_argument('--bridgespeed', default=1.0, type=float,
