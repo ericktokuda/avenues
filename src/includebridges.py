@@ -32,6 +32,7 @@ from optimized import generate_waxman_adj
 ORIGINAL = 0
 BRIDGE = 1
 BRIDGEACC = 2
+
 ############################################################# BRIDGE LOCATION
 UNIFORM = 0
 DEGREE = 1
@@ -112,8 +113,8 @@ def add_wedge(g, srcid, tgtid, etype, bridgespeed, bridgeid=-1):
     return g
 
 ##########################################################
-def add_detour(g, edge, origtree, spacing, bridgeid, bridgespeed,
-                     accessibs, nnearest):
+def add_path_closest(g, bridgeid, es, ndetours,
+                       bridgespeed):
     """Add shortcut path between @edge vertices"""
     info(inspect.stack()[0][3] + '()')
     orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0]
@@ -146,11 +147,26 @@ def add_detour(g, edge, origtree, spacing, bridgeid, bridgespeed,
     return add_wedge(g, vlast, tgtid, BRIDGEACC, bridgespeed, bridgeid)
 
 ##########################################################
-def add_detour_accessibility(g, bridgeid, edge, ndetours, bridgespeed,
-                             accessibs, nnearest):
-    """Add shortcut path between @edge vertices"""
+def add_avenue_closest(g, bridgeid, edge, ndetours, bridgespeed, coordstree):
+    """Add a path between @edge vertices with @ndetours in between and with
+    speed @bridgespeed. The detour vertices are chosen based on the minimum
+    distances to the the straight line middle points.  """
+    return add_avenue(g, bridgeid, edge, ndetours, bridgespeed,
+                      'uniform', coordstree)
+
+##########################################################
+def add_avenue_accessib(g, bridgeid, edge, ndetours, bridgespeed, accessibs):
+    """Add a path between @edge vertices with @ndetours in between and with
+    speed @bridgespeed. The detour vertices are chosen based on the minimum
+    distances to the the straight line middle points.  """
+    return add_avenue(g, bridgeid, edge, ndetours, bridgespeed,
+                      'accessib', accessibs)
+##########################################################
+def add_avenue(g, bridgeid, edge, ndetours, bridgespeed, choice, choiceparam):
+    """Add a path between @edge vertices with @ndetours in between and with
+    speed @bridgespeed. The detours are chosen based on the accessibility
+    values."""
     # info(inspect.stack()[0][3] + '()')
-    # orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0] # Real nodes
     coords = g['coords']
     srcid, tgtid = edge
     src = coords[srcid]
@@ -165,11 +181,15 @@ def add_detour_accessibility(g, bridgeid, edge, ndetours, bridgespeed,
     for j in range(ndetours):
         i = j + 1 # 1-based index
         p = src + versor * (d * i) # This vector p increases with d
-        ids = get_points_inside_region(coords, p, d/2)
-        ids = ids[np.argsort(accessibs[ids])] # Sort by accessib
+        if choice == 'uniform':
+            _, ids = choiceparam.query(p, 4) # the 2 first may be the src and tgt
+        elif choice == 'accessib':
+            ids = get_points_inside_region(coords, p, d/2)
+            ids = ids[np.argsort(choiceparam[ids])] # Sort by accessib
+            ids = list(reversed(ids))
 
         emptyball = True
-        for i, id in enumerate(ids): #TODO: accessibs in ascending order
+        for i, id in enumerate(ids):
             # if not (id in orig): continue # Avoid virtual nodes and loops
             if id == lastid or id == srcid or id == tgtid: continue
 
@@ -313,16 +333,17 @@ def analyze_increment_of_bridges(gorig, bridges, ndetours, bridgespeed, accessib
 
     ninvalid = 0 # Count the number of failure cases
     g = gorig.copy()
+    coordstree = cKDTree(g['coords'])
+
     for bridgeid, es in enumerate(bridges):
         info('bridgeid:{}'.format(bridgeid))
 
-        # origtree = cKDTree(g['coords'])
         # g = add_bridge(g, endpoints, origtree, spacing, bridgeid, nnearest,
                        # bridgespeed)
-        # g = add_detour(g, endpoints, origtree, spacing, bridgeid,
-                             # bridgespeed, accessibs, nnearest)
-        g, succ = add_detour_accessibility(g, bridgeid, es, ndetours,
-                                           bridgespeed, accessibs, 1)
+        # g, succ = add_avenue_closest(g, bridgeid, es, ndetours,
+                                     # bridgespeed, coordstree)
+        g, succ = add_avenue_accessib(g, bridgeid, es, ndetours,
+                                      bridgespeed, accessibs)
 
         if not succ:
             ninvalid += 1
