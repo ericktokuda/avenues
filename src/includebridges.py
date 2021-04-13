@@ -647,6 +647,8 @@ def main():
             help='Length of the bridges (km)')
     parser.add_argument('--nbridges', default=3, type=int,
             help='Number of bridges')
+    parser.add_argument('--ndetours', default=5, type=int,
+            help='Number of middle nodes inside the bridge')
     parser.add_argument('--bridgespeed', default=1.0, type=float,
             help='Speed in bridges')
     parser.add_argument('--samplerad', default=-1, type=float,
@@ -659,7 +661,6 @@ def main():
 
     refvcount = 11132 # Mean of the 4 cities
     avgdegree = 6
-    ndetours = 5 # number of virtual nodes
     bridgeleneps = .1 # 10% of margin
 
     os.makedirs(args.outdir, exist_ok=True)
@@ -696,12 +697,12 @@ def main():
 
     append_to_file(readmepath, 'vcount:{},ecount:{}'.format(g.vcount(), g.ecount()))
     append_to_file(readmepath, 'diameter:{},bridgelen:{},ndetours:{}'.format(
-        g.diameter(weights='length'), args.bridgelen, ndetours))
+        g.diameter(weights='length'), args.bridgelen, args.ndetours))
 
     es = pick_bridge_endpoints(g, args.nbridges, args.bridgelen, UNIFORM,
                                eps=bridgeleneps)
 
-    ninvalid = analyze_increment_of_bridges(g, es, ndetours, args.bridgespeed,
+    ninvalid = analyze_increment_of_bridges(g, es, args.ndetours, args.bridgespeed,
                                             accessibs, args.outdir, outcsv)
     append_to_file(readmepath, 'ninvalid:{}'.format(ninvalid))
 
