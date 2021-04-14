@@ -113,8 +113,7 @@ def add_wedge(g, srcid, tgtid, etype, bridgespeed, bridgeid=-1):
     return g
 
 ##########################################################
-def add_path_closest(g, bridgeid, es, ndetours,
-                       bridgespeed):
+def add_path_closest(g, bridgeid, es, bridgespacing, bridgespeed):
     """Add shortcut path between @edge vertices"""
     info(inspect.stack()[0][3] + '()')
     orig = np.where(np.array(g.vs['type']) != BRIDGEACC)[0]
@@ -147,25 +146,26 @@ def add_path_closest(g, bridgeid, es, ndetours,
     return add_wedge(g, vlast, tgtid, BRIDGEACC, bridgespeed, bridgeid)
 
 ##########################################################
-def add_avenue_closest(g, bridgeid, edge, ndetours, bridgespeed, coordstree):
-    """Add a path between @edge vertices with @ndetours in between and with
-    speed @bridgespeed. The detour vertices are chosen based on the minimum
+def add_avenue_closest(g, bridgeid, edge, bridgespacing, bridgespeed, coordstree):
+    """Add a path between the @edge vertices with points in-between
+    spaced by @bridgespacing and with speed @bridgespeed.
+    The detour vertices are chosen based on the minimum
     distances to the the straight line middle points.  """
-    return add_avenue(g, bridgeid, edge, ndetours, bridgespeed,
+    return add_avenue(g, bridgeid, edge, bridgespacing, bridgespeed,
                       'uniform', coordstree)
 
 ##########################################################
-def add_avenue_accessib(g, bridgeid, edge, ndetours, bridgespeed, accessibs):
-    """Add a path between @edge vertices with @ndetours in between and with
-    speed @bridgespeed. The detour vertices are chosen based on the minimum
-    distances to the the straight line middle points.  """
-    return add_avenue(g, bridgeid, edge, ndetours, bridgespeed,
+def add_avenue_accessib(g, bridgeid, edge, bridgespacing, bridgespeed, accessibs):
+    """Add a path between the @edge vertices with points in-between
+    spaced by @bridgespacing and with speed @bridgespeed.
+    The detour vertices are chosen based on the accessibility measurement
+    close to the stright line middle points.  """
+    return add_avenue(g, bridgeid, edge, bridgespacing, bridgespeed,
                       'accessib', accessibs)
 ##########################################################
-def add_avenue(g, bridgeid, edge, ndetours, bridgespeed, choice, choiceparam):
-    """Add a path between @edge vertices with @ndetours in between and with
-    speed @bridgespeed. The detours are chosen based on the accessibility
-    values."""
+def add_avenue(g, bridgeid, edge, bridgespacing, bridgespeed, choice, choiceparam):
+    """Add a path between @edge vertices with @bridgespacing in between and with
+    speed @bridgespeed."""
     # info(inspect.stack()[0][3] + '()')
     coords = g['coords']
     srcid, tgtid = edge
@@ -174,6 +174,7 @@ def add_avenue(g, bridgeid, edge, ndetours, bridgespeed, choice, choiceparam):
     vnorm = geo.haversine(src, tgt)
     versor = (tgt - src) / vnorm
 
+    ndetours = np.round(vnorm / bridgespacing).astype(int)
     d = (vnorm / ndetours)
 
     lastid = srcid # Last vertex of the new bridge
@@ -317,12 +318,12 @@ def extract_features(g, bridgespeed):
     return features
 
 ##########################################################
-def analyze_increment_of_bridges(gorig, bridges, ndetours, bridgespeed, accessibs,
+def analyze_increment_of_bridges(gorig, bridges, bridgespacing, bridgespeed, accessibs,
                                  outdir, outcsv):
     """Increment of @bridges to @g and extract features from each state. We add
-    @ndetours entrances/exit, considering the accessibility values (@accessibs)
-    in the choice of the middle nodes. The new edges have different speeds
-    (@bridgespeed) in the shortest paths computation. The results are
+    entrances/exit separated by @bridgespacing (+eps).
+    The new edges have different speeds (@bridgespeed) in the shortest
+    paths computation. The results are
     output to @outcsv."""
     info(inspect.stack()[0][3] + '()')
 
@@ -340,9 +341,9 @@ def analyze_increment_of_bridges(gorig, bridges, ndetours, bridgespeed, accessib
 
         # g = add_bridge(g, endpoints, origtree, spacing, bridgeid, nnearest,
                        # bridgespeed)
-        # g, succ = add_avenue_closest(g, bridgeid, es, ndetours,
+        # g, succ = add_avenue_closest(g, bridgeid, es, bridgespacing,
                                      # bridgespeed, coordstree)
-        g, succ = add_avenue_accessib(g, bridgeid, es, ndetours,
+        g, succ = add_avenue_accessib(g, bridgeid, es, bridgespacing,
                                       bridgespeed, accessibs)
 
         if not succ:
@@ -647,8 +648,8 @@ def main():
             help='Length of the bridges (km)')
     parser.add_argument('--nbridges', default=3, type=int,
             help='Number of bridges')
-    parser.add_argument('--ndetours', default=5, type=int,
-            help='Number of middle nodes inside the bridge')
+    parser.add_argument('--bridgespacing', default=0.5, type=float,
+            help='Spacing between the middle points of the bridge.')
     parser.add_argument('--bridgespeed', default=1.0, type=float,
             help='Speed in bridges')
     parser.add_argument('--samplerad', default=-1, type=float,
@@ -696,13 +697,14 @@ def main():
     info('nvertices: {}, nedges:{}'.format(g.vcount(), g.ecount()))
 
     append_to_file(readmepath, 'vcount:{},ecount:{}'.format(g.vcount(), g.ecount()))
-    append_to_file(readmepath, 'diameter:{},bridgelen:{},ndetours:{}'.format(
-        g.diameter(weights='length'), args.bridgelen, args.ndetours))
+    append_to_file(readmepath, 'diameter:{},bridgelen:{},bridgespacing:{}'.format(
+        g.diameter(weights='length'), args.bridgelen, args.bridgespacing))
 
     es = pick_bridge_endpoints(g, args.nbridges, args.bridgelen, UNIFORM,
                                eps=bridgeleneps)
 
-    ninvalid = analyze_increment_of_bridges(g, es, args.ndetours, args.bridgespeed,
+    ninvalid = analyze_increment_of_bridges(g, es, args.bridgespacing,
+                                            args.bridgespeed,
                                             accessibs, args.outdir, outcsv)
     append_to_file(readmepath, 'ninvalid:{}'.format(ninvalid))
 
