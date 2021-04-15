@@ -1,4 +1,4 @@
-# shortestpath
+# Bridges
 Analysis of shortest paths in spatial networks
 
 
