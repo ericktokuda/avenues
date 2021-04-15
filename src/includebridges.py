@@ -285,16 +285,22 @@ def extract_features(g, bridgespeed):
     # info(inspect.stack()[0][3] + '()')
     degrees = np.array(g.degree())
     pathlens = calculate_path_lengths(g, bridgespeed, weighted=True)
-    betwv = np.array(g.betweenness())
-    clucoeff = np.array(g.transitivity_local_undirected(mode="nan"))
-    divers = np.array(g.diversity(weights=g.es['length']))
-    clos = np.array(g.closeness())
-
     pathlensv = np.array(list(pathlens.values()))
-    assort = g.assortativity(g.degree(), directed=False)
-    clucoeff_ = clucoeff[~np.isnan(clucoeff)]
-    divers_ = divers[~np.isnan(divers)]
-    divers_ = divers_[np.isfinite(divers_)]
+
+    # betwv = np.array(g.betweenness())
+    # clucoeff = np.array(g.transitivity_local_undirected(mode="nan"))
+    # divers = np.array(g.diversity(weights=g.es['length']))
+    # clos_ = np.array(g.closeness())
+    # assort = g.assortativity(g.degree(), directed=False)
+    # clucoeff = clucoeff[~np.isnan(clucoeff)]
+    # divers = divers[~np.isnan(divers)]
+    # divers = divers[np.isfinite(divers)]
+
+    betwv = np.ones(g.vcount()) #TODO: not computing these values
+    clucoeff = np.ones(g.vcount())
+    divers = np.ones(g.vcount())
+    clos = np.ones(g.vcount())
+    assort = np.ones(g.vcount())
 
     features = dict(
             g_pathlen_mean = np.mean(pathlensv),
@@ -305,10 +311,10 @@ def extract_features(g, bridgespeed):
             g_betwv_std = np.std(betwv),
             g_assort_mean = np.mean(assort),
             g_assort_std = np.std(assort),
-            g_clucoeff_mean = np.mean(clucoeff_),
-            g_clucoeff_std = np.std(clucoeff_),
-            g_divers_mean = np.mean(divers_),
-            g_divers_std = np.std(divers_),
+            g_clucoeff_mean = np.mean(clucoeff),
+            g_clucoeff_std = np.std(clucoeff),
+            g_divers_mean = np.mean(divers),
+            g_divers_std = np.std(divers),
             g_clos_mean = np.mean(clos),
             g_clos_std = np.std(clos),
             )
