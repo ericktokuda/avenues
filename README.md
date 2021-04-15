@@ -6,5 +6,5 @@ Analysis of shortest paths in spatial networks
 ```
 conda create --name graph --y python==3.7.7
 conda activate graph
-pip install matplotlib numpy ipython jupyter scipy pandas scikit-learn scikit-image erikunicamp-myutils geopandas python-igraph cairocffi
+pip install matplotlib numpy ipython jupyter scipy pandas scikit-learn scikit-image erikunicamp-myutils geopandas python-igraph cairocffi cython
 ```
