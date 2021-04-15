@@ -333,12 +333,12 @@ def analyze_increment_of_bridges(gorig, bridges, bridgespacing, bridgespeed, acc
     vals = [feats.values()]
 
     ninvalid = 0 # Count the number of failure cases
-    g = gorig.copy()
-    coordstree = cKDTree(g['coords'])
+    coordstree = cKDTree(gorig['coords'])
 
     for bridgeid, es in enumerate(bridges):
         info('bridgeid:{}'.format(bridgeid))
 
+        g = gorig.copy()
         # g = add_bridge(g, endpoints, origtree, spacing, bridgeid, nnearest,
                        # bridgespeed)
         # g, succ = add_avenue_closest(g, bridgeid, es, bridgespacing,
