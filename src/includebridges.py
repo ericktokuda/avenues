@@ -260,7 +260,8 @@ def calculate_path_lengths(g, brspeed, weighted=False):
 
     pathlens = {}
 
-    if g.vcount() < 2: return 0, 0
+    n = g.vcount()
+    if n < 2: return 0, 0
 
     w = np.array(g.es['length'])
     if weighted:
@@ -268,16 +269,9 @@ def calculate_path_lengths(g, brspeed, weighted=False):
         if len(bridgeids) > 0:
             w[bridgeids] = w[bridgeids] / brspeed
 
-    for srcid in range(g['vcount']): #Assuming an undirected graph
-        tgts = list(range(srcid + 1, g['vcount']))
-
-        spaths =  g.shortest_paths(source=srcid, target=tgts,
-                                   weights=w, mode='ALL')
-
-        for tgtid, l in zip(tgts, spaths[0]):
-            pathlens[(srcid, tgtid)] = l
-
-    return np.array(list(pathlens.values()))
+    paths = np.array(g.shortest_paths(weights=w))
+    xu, yu = np.triu_indices_from(paths, k=1) # Remove diagonal and duplicates
+    return paths[mask]
 
 ##########################################################
 def extract_features(g, bridgespeed):
