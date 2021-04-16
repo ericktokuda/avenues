@@ -262,11 +262,11 @@ def calculate_path_lengths(g, brspeed, weighted=False):
 
     if g.vcount() < 2: return 0, 0
 
-    w = np.ones(g.ecount(), dtype=float)
+    w = np.array(g.es['length'])
     if weighted:
         bridgeids = np.where(np.array(g.es['type']) == BRIDGE)[0]
         if len(bridgeids) > 0:
-            w[bridgeids] = np.array(g.es['length'])[bridgeids] / brspeed
+            w[bridgeids] = w[bridgeids] / brspeed
 
     for srcid in range(g['vcount']): #Assuming an undirected graph
         tgts = list(range(srcid + 1, g['vcount']))
@@ -277,15 +277,14 @@ def calculate_path_lengths(g, brspeed, weighted=False):
         for tgtid, l in zip(tgts, spaths[0]):
             pathlens[(srcid, tgtid)] = l
 
-    return pathlens
+    return np.array(list(pathlens.values()))
 
 ##########################################################
 def extract_features(g, bridgespeed):
     """Extract features from graph @g """
     # info(inspect.stack()[0][3] + '()')
     degrees = np.array(g.degree())
-    pathlens = calculate_path_lengths(g, bridgespeed, weighted=True)
-    pathlensv = np.array(list(pathlens.values()))
+    pathlensv = calculate_path_lengths(g, bridgespeed, weighted=True)
 
     # betwv = np.array(g.betweenness())
     # clucoeff = np.array(g.transitivity_local_undirected(mode="nan"))
