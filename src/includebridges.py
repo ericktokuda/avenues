@@ -271,7 +271,7 @@ def calculate_path_lengths(g, brspeed, weighted=False):
 
     paths = np.array(g.shortest_paths(weights=w))
     xu, yu = np.triu_indices_from(paths, k=1) # Remove diagonal and duplicates
-    return paths[xy, yu]
+    return paths[xu, yu]
 
 ##########################################################
 def extract_features(g, bridgespeed):
