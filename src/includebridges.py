@@ -174,7 +174,7 @@ def add_avenue(g, bridgeid, edge, bridgespacing, bridgespeed, choice, choicepara
     vnorm = geo.haversine(src, tgt)
     versor = (tgt - src) / vnorm
 
-    ndetours = np.round(vnorm / bridgespacing).astype(int)
+    ndetours = np.round(vnorm / bridgespacing).astype(int) - 1
     d = (vnorm / ndetours)
 
     lastid = srcid # Last vertex of the new bridge
@@ -208,7 +208,7 @@ def add_avenue(g, bridgeid, edge, bridgespacing, bridgespeed, choice, choicepara
 
     # Last segment of the bridge
     if not g.are_connected(lastid, tgtid):
-        g = add_wedge(g, lastid, tgtid, BRIDGEACC, bridgespeed, bridgeid)
+        g = add_wedge(g, lastid, tgtid, BRIDGE, bridgespeed, bridgeid)
 
     return g, True
 
@@ -331,9 +331,11 @@ def analyze_increment_of_bridges(gorig, bridges, bridgespacing, bridgespeed, acc
     feats = extract_features(gorig, bridgespeed)
     vals = [feats.values()]
 
+    m = gorig.ecount()
     ninvalid = 0 # Count the number of failure cases
     coordstree = cKDTree(gorig['coords'])
 
+    newedges = []
     for bridgeid, es in enumerate(bridges):
         info('bridgeid:{}'.format(bridgeid))
 
@@ -351,12 +353,22 @@ def analyze_increment_of_bridges(gorig, bridges, bridgespacing, bridgespeed, acc
 
         g.vs[es[0]]['type'] = g.vs[es[1]]['type'] = BRIDGE
         vtypes = np.array(g.vs['type'])
+        avedges = []
+        for k in range(m, g.ecount()):
+            avedges.extend([g.es[k].source, g.es[k].target])
+
+        avvertices = []
+        [avvertices.append(x) for x in avedges if x not in avvertices]
+        newedges.append(avvertices)
+
         vals.append(extract_features(g, bridgespeed).values())
         # plot_map(g, pjoin(outdir, 'map_{:02d}.png'.format(bridgeid)),
         # vertices=True)
 
-    outpath = pjoin(outdir, 'finalmap.pdf')
-    plot_map(g, outpath, vertices=True)
+    outpath = pjoin(outdir, 'newedges.pkl')
+    pkl.dump(newedges, open(outpath, 'wb'))
+    # outpath = pjoin(outdir, 'finalmap.pdf')
+    # plot_map(g, outpath, vertices=True)
     df = pd.DataFrame(vals, columns=feats.keys())
     df.to_csv(outcsv, index=False)
     return ninvalid

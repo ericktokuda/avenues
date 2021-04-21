@@ -356,12 +356,15 @@ def plot_heatmap(localfeats, outdir):
 ##########################################################
 def plot_avg_path_lengths(localfeats, outdir):
     # templ = '/home/frodo/results/bridges/20201026-4cities/C_s1000_n200_spS/results.csv'
-    templ = '/home/frodo/results/bridges/20201113-bridges/C_len0.5_spS/results.csv'
-    cities = ['barcelona', 'dublin', 'manchester', 'paris']
+    # templ = '/home/frodo/results/bridges/20210119-avenues/C_len2.0_spS/results.csv'
+    templ = '/home/frodo/results/bridges/20210412-bridges/C_brlenBL_ndetoursND_spS/results.csv'
+    # templ = '/tmp/C_len2.0_spS/results.csv'
+    # cities = ['barcelona', 'dublin', 'manchester', 'paris']
+    cities = ['barcelona', 'dublin', 'paris']
     # cities = ['barcelona']
               # 'wx0.001', 'wx0.005', 'wx0.010']
     # speeds = ['0.50', '1.00', '2.00']
-    speeds = ['0.25', '0.5', '0.75', '1.0', '1.5', '2.0', '4.0']
+    speeds = ['0.25', '1.0', '4.0']
 
     W = 640; H = 480
     fig, ax = plt.subplots(figsize=(W*.01, H*.01), dpi=100)
@@ -375,6 +378,7 @@ def plot_avg_path_lengths(localfeats, outdir):
         stdpathlens = []
         for s in speeds:
             df = pd.read_csv(templ.replace('C', c).replace('S', s))
+            print(templ.replace('C', c).replace('S', s))
             pathlens = df[col].loc[1:] # Idx 0 is without bridges
             # pathlens /= df[col].loc[0]
             pathlens /= np.max(pathlens)
@@ -392,6 +396,60 @@ def plot_avg_path_lengths(localfeats, outdir):
     plt.savefig(outpath)
 
 ##########################################################
+def concat_results(resultsdir, outdir):
+    """Short description """
+    info(inspect.stack()[0][3] + '()')
+    dirs = os.listdir(resultsdir)
+
+    rows = []
+    for d in sorted(dirs):
+        if not os.path.isdir(pjoin(resultsdir, d)): continue
+        respath = pjoin(resultsdir, d, 'results.csv')
+        if not os.path.exists(respath): continue
+        
+        arrstr = d.split('_')
+        print(arrstr)
+        speed = arrstr.pop().split('sp')[1]
+        spacing = arrstr.pop().split('brspacing')[1]
+        brlen = arrstr.pop().split('brlen')[1]
+        city = arrstr.pop()
+
+        df = pd.read_csv(respath)
+        lens = df.g_pathlen_mean.to_numpy()
+
+        gains = []
+        origlen = lens[0]
+        for i in range(len(lens) - 1):
+            gains.append( np.abs((lens[i+1] - lens[i]) / origlen))
+            x = [np.mean(gains), np.std(gains), np.min(gains), np.max(gains)]
+            nums = ['{:.04f}'.format(xx) for xx in x]
+        row = [city, brlen, spacing, speed] + nums
+        rows.append(row)
+
+    cols = 'city,brlength,brspacing,brspeed,gainmean,' \
+        'gainstd,gainmin,gainmax'.split(',')
+    df = pd.DataFrame(rows, columns=cols)
+    df.to_csv(pjoin(outdir, 'resultsall.csv'), index=False)
+
+def plot_each_results(resallpath, outdir):
+    df = pd.read_csv(resallpath)
+    # df = df.loc[df.brnpoints == 3]
+    for l in np.unique(df.brlength):
+        df2 = df.loc[df.brlength == l]
+        for m in ['gainmean', 'gainstd', 'gainmin', 'gainmax']:
+            figscale = 6
+            fig, ax = plt.subplots(figsize=(figscale, figscale))
+            for c in np.unique(df2.city):
+                df3 = df2.loc[df2.city == c]
+                ax.plot(df3.brspeed, df3[m] / l, label=c)
+            ax.set_xlabel('Bridges speed')
+            ax.set_ylabel('Normalized ' + m)
+            ax.set_ylim(0, 0.025)
+            fig.legend()
+            plt.tight_layout()
+            plt.savefig(pjoin(outdir, 'brlength{:.02f}_{}.png'.format(l, m)))
+
+##########################################################
 def main():
     info(inspect.stack()[0][3] + '()')
     t0 = time.time()
@@ -403,19 +461,26 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
 
     # df = pd.read_csv(args.results)
-    localfeats = ['pathlen', 'degree', 'betwv', 'divers', 'clucoeff', 'clos']
+    # localfeats = ['pathlen', 'degree', 'betwv', 'divers', 'clucoeff', 'clos']
 
     # plot_global(df, args.outdir)
     # plot_local_individually(df, args.outdir)
     # plot_local_mean(df, args.outdir)
     # plot_corr_all(df, localfeats, args.outdir)
+
     # plot_hists(df, localfeats, args.outdir)
     # plot_densities(df, localfeats, args.outdir)
     # compare_densities(df, localfeats, args.outdir)
     # plot_densities_all(localfeats, args.outdir)
     # plot_heatmap(localfeats, args.outdir )
     # plot_pairwise_points(df, localfeats, args.outdir )
-    plot_avg_path_lengths(localfeats, args.outdir)
+    # plot_avg_path_lengths(localfeats, args.outdir)
+    # resultsdir = '/home/frodo/results/bridges/20210415-bridges/seed1/'
+    # concat_results(resultsdir, args.outdir)
+    # return
+    # resallpath = '/home/frodo/results/bridges/20210413-bridges/resultsall.csv'
+    resallpath = '/home/frodo/results/bridges/20210415-bridges/seed1.csv'
+    plot_each_results(resallpath, args.outdir)
 
     info('Elapsed time:{}'.format(time.time()-t0))
     info('Output generated in {}'.format(args.outdir))
