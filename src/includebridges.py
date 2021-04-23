@@ -697,8 +697,6 @@ def define_plot_layout(mapside, plotzoom):
     return visual
 
 ##########################################################
-
-
 def scale_coords(g, bbox):
     """Scale [-1,1] coords to the bbox provided"""
     info(inspect.stack()[0][3] + '()')
@@ -717,9 +715,31 @@ def scale_coords(g, bbox):
         g.es[j]['length'] = l
     return g
 
+
 ##########################################################
+def get_dcoords(angrad, bridgelen, midpoint):
+    dcoords = np.ndarray((len(angrad), 2), dtype=float)
+    for i, a in enumerate(angrad):
+        print(a)
+        if np.isclose(a, np.pi / 2, 0.01):
+            versorx, versory = 1, 0
+        else:
+            z = np.tan(a)
+            versorx = 1 / np.sqrt(1 + z**2)
+            versory = z * versorx
+            versor = np.array([versorx, versory])
+
+        def get_coords_delta(b, midpoint=midpoint, versor=versor):
+            h = geo.haversine(midpoint, midpoint + b * versor)
+            return bridgelen - h
+
+        d = scipy.optimize.bisect(get_coords_delta, 0, 0.05,
+        xtol=0.001, rtol=0.01)
+        dcoords[i, :] = d * versor
+    return dcoords
 
 
+##########################################################
 def main():
     info(inspect.stack()[0][3] + '()')
     t0 = time.time()
@@ -798,56 +818,20 @@ def main():
     gridx, gridy = np.mgrid[bounds[0]:bounds[2]:(gridsize*1j),
     bounds[1]:bounds[3]:(gridsize*1j)]
     angrad = np.linspace(0, np.pi, nangles)
-    # info(gridx, gridy, angrad)
 
     coordstree = cKDTree(g['coords'])
     midpoint = np.array([(bounds[2] - bounds[0]) / 2,
                                           (bounds[3] - bounds[1]) / 2])
-    # _, midvidx = coordstree.query(midpoint)
-    # midvcoord = g['coords'][midvidx, :]
-
-    # print(angrad)
     
     # Calculate the (dx, dy) for each angle
-    for a in angrad:
-        print(a)
-        if np.isclose(a, np.pi / 2, 0.01):
-            versorx, versory = 1, 0
-        else:
-            z = np.tan(a)
-            versorx = 1 / np.sqrt(1 + z**2)
-            versory = z * versorx
-            versor = np.array([versorx, versory])
+    dcoords = get_dcoords(angrad, bridgelen, midpoint)
             
-        # print(geo.haversine(midpoint, midpoint + 0.01 * versor))
-        # breakpoint()
-        
-        def get_coords_delta(b, midpoint=midpoint, versor=versor):
-            h = geo.haversine(midpoint, midpoint + b * versor)
-            # print(b, h, bridgelen)
-            return bridgelen - h
-            
-        d = scipy.optimize.bisect(get_coords_delta, 0, 0.05,
-        xtol=0.001, rtol=0.01)
-            # k = midpoint + 0.01 * versor - midpoint
-            # print(a, np.arctan2(k[1], k[0]))
-        print(geo.haversine(midpoint, midpoint + d * versor))
-        print(a, d)
-            
-        # p = p0 + bridgelen * versor
-
-
     for x, y in zip(gridx.flatten(), gridy.flatten()):
         p0 = np.array([x, y])
-        for a in angrad:
-            if np.isclose(a, np.pi / 2, 0.01):
-                versorx, versory = 1, 0
-            else:
-                z = np.tan(a)
-                versorx = 1 / np.sqrt(1 + z**2)
-                versory = z * versorx
-            versor = np.array([versorx, versory])
-            p = p0 + bridgelen * versor
+        for j, a in enumerate(angrad):
+            p = p0 + dcoords[j, :]
+            _, nearestid = coordstree.query(p)
+            print(nearestid)
             breakpoint()
 
 
