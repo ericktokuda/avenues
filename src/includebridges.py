@@ -43,8 +43,6 @@ BETWV = 2
 CLUCOEFF = 3
 
 ##########################################################
-
-
 def parse_graphml(graphmlpath, undir=True, samplerad=-1):
     """Read graphml file to igraph object and dump it to @pklpath
     It extracts the major component, and simplify it (neither multiedges nor
@@ -66,8 +64,6 @@ def parse_graphml(graphmlpath, undir=True, samplerad=-1):
     return g, origids
 
 ##########################################################
-
-
 def induced_by(gorig, vs):
     g = gorig.copy()
     todel = np.ones(g.vcount(), bool)
@@ -76,8 +72,6 @@ def induced_by(gorig, vs):
     return g
 
 ##########################################################
-
-
 def sample_circle_from_graph(g, radius):
     """Sample a random region from the graph """
     # info(inspect.stack()[0][3] + '()')
@@ -90,8 +84,6 @@ def sample_circle_from_graph(g, radius):
     return induced_by(g, ids), ids
 
 ##########################################################
-
-
 def get_points_inside_region(coords, c0, radius):
     """Get points from @df within circle of center @c0 and @radius"""
     # info(inspect.stack()[0][3] + '()')
@@ -103,8 +95,6 @@ def get_points_inside_region(coords, c0, radius):
     return inds[0]
 
 ##########################################################
-
-
 def calculate_dist(coords, srcid, tgtid, realcoords):
     """Calculate edge length based on 'x' and 'y' attributes"""
     # src = np.array([float(g.vs[srcid]['x']), float(g.vs[srcid]['y'])])
@@ -118,8 +108,6 @@ def calculate_dist(coords, srcid, tgtid, realcoords):
     return l
 
 ##########################################################
-
-
 def add_wedge(g, srcid, tgtid, etype, bridgespeed, bridgeid=-1):
     g.add_edge(srcid, tgtid, type=etype)
     eid = g.ecount() - 1
@@ -131,8 +119,6 @@ def add_wedge(g, srcid, tgtid, etype, bridgespeed, bridgeid=-1):
     return g
 
 ##########################################################
-
-
 def add_path_closest(g, bridgeid, es, bridgespacing, bridgespeed):
     """Add shortcut path between @edge vertices"""
     info(inspect.stack()[0][3] + '()')
@@ -167,8 +153,6 @@ def add_path_closest(g, bridgeid, es, bridgespacing, bridgespeed):
     return add_wedge(g, vlast, tgtid, BRIDGEACC, bridgespeed, bridgeid)
 
 ##########################################################
-
-
 def add_avenue_closest(g, bridgeid, edge, bridgespacing, bridgespeed, coordstree):
     """Add a path between the @edge vertices with points in-between
     spaced by @bridgespacing and with speed @bridgespeed.
@@ -178,8 +162,6 @@ def add_avenue_closest(g, bridgeid, edge, bridgespacing, bridgespeed, coordstree
                       'uniform', coordstree)
 
 ##########################################################
-
-
 def add_avenue_accessib(g, bridgeid, edge, bridgespacing, bridgespeed, accessibs):
     """Add a path between the @edge vertices with points in-between
     spaced by @bridgespacing and with speed @bridgespeed.
@@ -187,13 +169,11 @@ def add_avenue_accessib(g, bridgeid, edge, bridgespacing, bridgespeed, accessibs
     close to the stright line middle points.  """
     return add_avenue(g, bridgeid, edge, bridgespacing, bridgespeed,
                       'accessib', accessibs)
+
 ##########################################################
-
-
 def add_avenue(g, bridgeid, edge, bridgespacing, bridgespeed, choice, choiceparam):
     """Add a path between @edge vertices with @bridgespacing in between and with
     speed @bridgespeed."""
-    # info(inspect.stack()[0][3] + '()')
     coords = g['coords']
     srcid, tgtid = edge
     src = coords[srcid]
@@ -202,13 +182,14 @@ def add_avenue(g, bridgeid, edge, bridgespacing, bridgespeed, choice, choicepara
     versor = (tgt - src) / vnorm
 
     ndetours = np.round(vnorm / bridgespacing).astype(int) - 1
-    d = (vnorm / ndetours)
+    if ndetours > 0: d = (vnorm / ndetours)
 
     lastid = srcid  # Last vertex of the new bridge
 
     for j in range(ndetours):
         i = j + 1  # 1-based index
         p = src + versor * (d * i)  # This vector p increases with d
+
         if choice == 'uniform':
             # the 2 first may be the src and tgt
             _, ids = choiceparam.query(p, 4)
@@ -219,7 +200,6 @@ def add_avenue(g, bridgeid, edge, bridgespacing, bridgespeed, choice, choicepara
 
         emptyball = True
         for i, id in enumerate(ids):
-            # if not (id in orig): continue # Avoid virtual nodes and loops
             if id == lastid or id == srcid or id == tgtid:
                 continue
 
@@ -230,8 +210,7 @@ def add_avenue(g, bridgeid, edge, bridgespacing, bridgespeed, choice, choicepara
             emptyball = False
             break
 
-        # In case we could not find any vertex inside the ball
-        if emptyball:
+        if emptyball: # In case we cannot not find any vertex nearby
             return g, False
 
         lastid = id
@@ -243,8 +222,6 @@ def add_avenue(g, bridgeid, edge, bridgespacing, bridgespeed, choice, choicepara
     return g, True
 
 ##########################################################
-
-
 def add_bridge(g, edge, origtree, spacing, bridgeid, nnearest, bridgespeed):
     """Add @eid bridge and accesses in @g"""
     # info(inspect.stack()[0][3] + '()')
@@ -287,8 +264,6 @@ def add_bridge(g, edge, origtree, spacing, bridgeid, nnearest, bridgespeed):
     return g
 
 ##########################################################
-
-
 def calculate_path_lengths(g, brspeed, weighted=False):
     """Calculate avg path length of @g.
     Calling all at once, without the loop on the vertices, it crashes
@@ -312,8 +287,6 @@ def calculate_path_lengths(g, brspeed, weighted=False):
     return paths[xu, yu]
 
 ##########################################################
-
-
 def extract_features(g, bridgespeed):
     """Extract features from graph @g """
     # info(inspect.stack()[0][3] + '()')
@@ -357,10 +330,8 @@ def extract_features(g, bridgespeed):
     return features
 
 ##########################################################
-
-
-def analyze_increment_of_bridges(gorig, bridges, bridgespacing, bridgespeed, accessibs,
-                                 outdir, outcsv):
+def analyze_increment_of_bridges(gorig, bridgesexact, bridges, bridgespacing,
+                                 bridgespeed, accessibs, outdir, outcsv):
     """Increment of @bridges to @g and extract features from each state. We add
     entrances/exit separated by @bridgespacing (+eps).
     The new edges have different speeds (@bridgespeed) in the shortest
@@ -384,17 +355,16 @@ def analyze_increment_of_bridges(gorig, bridges, bridgespacing, bridgespeed, acc
         g = gorig.copy()
         # g = add_bridge(g, endpoints, origtree, spacing, bridgeid, nnearest,
         # bridgespeed)
-        # g, succ = add_avenue_closest(g, bridgeid, es, bridgespacing,
-        # bridgespeed, coordstree)
-        g, succ = add_avenue_accessib(g, bridgeid, es, bridgespacing,
-                                      bridgespeed, accessibs)
+        # g, succ = add_avenue_accessib(g, bridgeid, es, bridgespacing,
+        #                               bridgespeed, accessibs)
+        g, succ = add_avenue_closest(g, bridgeid, es, bridgespacing,
+                                     bridgespeed, coordstree)
 
         if not succ:
             ninvalid += 1
             continue
 
         g.vs[es[0]]['type'] = g.vs[es[1]]['type'] = BRIDGE
-        vtypes = np.array(g.vs['type'])
         avedges = []
         for k in range(m, g.ecount()):
             avedges.extend([g.es[k].source, g.es[k].target])
@@ -404,20 +374,14 @@ def analyze_increment_of_bridges(gorig, bridges, bridgespacing, bridgespeed, acc
         newedges.append(avvertices)
 
         vals.append(extract_features(g, bridgespeed).values())
-        # plot_map(g, pjoin(outdir, 'map_{:02d}.png'.format(bridgeid)),
-        # vertices=True)
 
     outpath = pjoin(outdir, 'newedges.pkl')
     pkl.dump(newedges, open(outpath, 'wb'))
-    # outpath = pjoin(outdir, 'finalmap.pdf')
-    # plot_map(g, outpath, vertices=True)
     df = pd.DataFrame(vals, columns=feats.keys())
     df.to_csv(outcsv, index=False)
     return ninvalid
 
 ##########################################################
-
-
 def plot_map(g, outpath, vertices=False):
     """Plot map g, according to 'type' attrib both in vertices and in edges """
 
@@ -468,8 +432,6 @@ def plot_map(g, outpath, vertices=False):
     plt.savefig(outpath)
 
 ##########################################################
-
-
 def choose_bridges_random_minlen(g, nnewedges, available, minlen):
     inds = np.arange(len(available))
     np.random.shuffle(inds)
@@ -486,8 +448,6 @@ def choose_bridges_random_minlen(g, nnewedges, available, minlen):
     return bridges
 
 ##########################################################
-
-
 def weighted_random_sampling_n(items, weights, n):
     item = items.copy()
     weights = weights.copy()
@@ -503,8 +463,6 @@ def weighted_random_sampling_n(items, weights, n):
     return sample
 
 ##########################################################
-
-
 def pick_bridge_endpoints(g, nnewedges, length, choice, eps=0):
     """Choose the bridge endpoins. Multiple edges are not allowed.
     We consider @nnewedges of extension @length (up to @eps variation)
@@ -548,8 +506,6 @@ def pick_bridge_endpoints(g, nnewedges, length, choice, eps=0):
     # return choose_bridges_given_len(g, nnewedges, available, length)
 
 ##########################################################
-
-
 def get_neighbourhoods(g, centerids, r):
     """Get neighbour ids within radius r for each c0 in c0s.
     It includes self."""
@@ -566,8 +522,6 @@ def get_neighbourhoods(g, centerids, r):
     return neighbours
 
 ##########################################################
-
-
 def get_neighbourhoods_origids(g, centerids, r):
     """Get original id of the neighbours within radius r for each center.
     It includes self."""
@@ -575,8 +529,6 @@ def get_neighbourhoods_origids(g, centerids, r):
     return [np.array(g.vs['origid'])[ids] for ids in neids]
 
 #############################################################
-
-
 def get_waxman_params(nvertices, avgdegree, alpha):
     wxcatalog = {
         '1000,6,0.0050': 179.3795937768998,
@@ -599,8 +551,6 @@ def get_waxman_params(nvertices, avgdegree, alpha):
     return beta, alpha
 
 #############################################################
-
-
 def generate_waxman(n, maxnedges, alpha, beta, domain=(0, 0, 1, 1)):
     adjlist, x, y = generate_waxman_adj(n, maxnedges, alpha, beta,
                                         domain[0], domain[1], domain[2], domain[3])
@@ -612,8 +562,6 @@ def generate_waxman(n, maxnedges, alpha, beta, domain=(0, 0, 1, 1)):
     return g
 
 #############################################################
-
-
 def generate_graph(topologymodel, nvertices, avgdegree, wxalpha):
     """Generate graph according to the @topologymodel, @nvertices, @avgdegree
     and @wxalpha, if applicable. It also compute and store the edges lengths
@@ -648,8 +596,6 @@ def generate_graph(topologymodel, nvertices, avgdegree, wxalpha):
     return g
 
 ##########################################################
-
-
 def get_rgg_params(nvertices, avgdegree):
     rggcatalog = {
         '625,6': 0.056865545,
@@ -668,8 +614,6 @@ def get_rgg_params(nvertices, avgdegree):
     return scipy.optimize.brentq(f, 0.0001, 10000)
 
 ##########################################################
-
-
 def plot_topology(g, coords, toprasterpath, visualorig, plotalpha):
     """Plot the gradients map"""
     info(inspect.stack()[0][3] + '()')
@@ -680,8 +624,6 @@ def plot_topology(g, coords, toprasterpath, visualorig, plotalpha):
                 **visual)
 
 ##########################################################
-
-
 def define_plot_layout(mapside, plotzoom):
     # Square of the center surrounded by radius 3
     #  (equiv to 99.7% of the points of a gaussian)
@@ -720,7 +662,6 @@ def scale_coords(g, bbox):
 def get_dcoords(angrad, bridgelen, midpoint):
     dcoords = np.ndarray((len(angrad), 2), dtype=float)
     for i, a in enumerate(angrad):
-        print(a)
         if np.isclose(a, np.pi / 2, 0.01):
             versorx, versory = 1, 0
         else:
@@ -750,14 +691,16 @@ def main():
                         help='Path to the accessib values')
     parser.add_argument('--wxalpha', default=.1, type=float,
                         help='Waxman alpha')
+    parser.add_argument('--nbridgeangles', default=4, type=int,
+                        help='Number of bridge angles')
     parser.add_argument('--bridgelen', default=.5, type=float,
                         help='Length of the bridges (km)')
-    parser.add_argument('--nbridges', default=3, type=int,
-                        help='Number of bridges')
     parser.add_argument('--bridgespacing', default=0.5, type=float,
                         help='Spacing between the middle points of the bridge.')
     parser.add_argument('--bridgespeed', default=1.0, type=float,
                         help='Speed in bridges')
+    parser.add_argument('--gridside', default=4, type=int,
+                        help='Side of the grid')
     parser.add_argument('--samplerad', default=-1, type=float,
                         help='Region of interest radius')
     parser.add_argument('--seed', default=0, type=int,
@@ -777,7 +720,7 @@ def main():
     np.random.seed(args.seed)
 
     outcsv = pjoin(args.outdir, 'results.csv')
-    maxnedges = np.max(args.nbridges)
+    # maxnedges = np.max(args.nbridges)
 
     if os.path.exists(args.graph):
         g, origids = parse_graphml(
@@ -812,34 +755,38 @@ def main():
     xmin, ymin = np.min(g['coords'], axis=0)
     xmax, ymax = np.max(g['coords'], axis=0)
     bounds = [xmin, ymin, xmax, ymax]
-    gridsize = 20
-    nangles = int(180 / 20)
-    bridgelen = 2
-    gridx, gridy = np.mgrid[bounds[0]:bounds[2]:(gridsize*1j),
-    bounds[1]:bounds[3]:(gridsize*1j)]
-    angrad = np.linspace(0, np.pi, nangles)
+    bridgelen = args.bridgelen
+    gridx, gridy = np.mgrid[bounds[0]:bounds[2]:(args.gridside*1j),
+    bounds[1]:bounds[3]:(args.gridside*1j)]
+    angrad = np.linspace(0, np.pi, args.nbridgeangles)
 
     coordstree = cKDTree(g['coords'])
     midpoint = np.array([(bounds[2] - bounds[0]) / 2,
-                                          (bounds[3] - bounds[1]) / 2])
+                         (bounds[3] - bounds[1]) / 2])
     
     # Calculate the (dx, dy) for each angle
     dcoords = get_dcoords(angrad, bridgelen, midpoint)
-            
+    
+    esexact = []
+    es = []
     for x, y in zip(gridx.flatten(), gridy.flatten()):
-        p0 = np.array([x, y])
+        grid0 = np.array([x, y])
+        _, src = coordstree.query(grid0)
         for j, a in enumerate(angrad):
-            p = p0 + dcoords[j, :]
-            _, nearestid = coordstree.query(p)
-            print(nearestid)
-            breakpoint()
+            p = grid0 + dcoords[j, :]
+            _, outtgt = coordstree.query(p, k=2)
+            tgt = outtgt[1] if outtgt[0] == src else outtgt[0]
+            esexact.append([grid0, p])
+            es.append([src, tgt])
 
+    esexact = np.array(esexact)
+    es = np.array(es)
 
-    breakpoint()
-    es = pick_bridge_endpoints(g, args.nbridges, args.bridgelen, UNIFORM,
-                               eps=bridgeleneps)
+    # es = pick_bridge_endpoints(g, args.nbridges, args.bridgelen, UNIFORM,
+    #                            eps=bridgeleneps)
 
-    ninvalid = analyze_increment_of_bridges(g, es, args.bridgespacing,
+    ninvalid = analyze_increment_of_bridges(g, esexact, es,
+                                            args.bridgespacing,
                                             args.bridgespeed,
                                             accessibs, args.outdir, outcsv)
     append_to_file(readmepath, 'ninvalid:{}'.format(ninvalid))
