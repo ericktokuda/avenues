@@ -375,8 +375,13 @@ def analyze_increment_of_bridges(gorig, bridgesexact, bridges, bridgespacing,
 
         vals.append(extract_features(g, bridgespeed).values())
 
-    outpath = pjoin(outdir, 'newedges.pkl')
-    pkl.dump(newedges, open(outpath, 'wb'))
+    brcoords = np.concatenate([g['coords'][bridges[:, 0]],
+                               g['coords'][bridges[:, 1]]],
+                              axis=1)
+    pkl.dump(newedges, open(pjoin(outdir, 'newedges.pkl'), 'wb'))
+    pkl.dump(brcoords, open(pjoin(outdir, 'brcoords.pkl'), 'wb'))
+    pkl.dump(bridgesexact, open(pjoin(outdir, 'brcoordsexact.pkl'), 'wb'))
+    
     df = pd.DataFrame(vals, columns=feats.keys())
     df.to_csv(outcsv, index=False)
     return ninvalid
@@ -767,8 +772,11 @@ def main():
     # Calculate the (dx, dy) for each angle
     dcoords = get_dcoords(angrad, bridgelen, midpoint)
     
-    esexact = []
+    
+    esexact = np.zeros((gridx.shape[0] * gridx.shape[1] * args.nbridgeangles, 4),
+                       dtype=float)
     es = []
+    i = 0
     for x, y in zip(gridx.flatten(), gridy.flatten()):
         grid0 = np.array([x, y])
         _, src = coordstree.query(grid0)
@@ -776,7 +784,9 @@ def main():
             p = grid0 + dcoords[j, :]
             _, outtgt = coordstree.query(p, k=2)
             tgt = outtgt[1] if outtgt[0] == src else outtgt[0]
-            esexact.append([grid0, p])
+            # esexact.append([grid0, p])
+            esexact[i, :2] = grid0; esexact[i, 2:] = p
+            i += 1
             es.append([src, tgt])
 
     esexact = np.array(esexact)
