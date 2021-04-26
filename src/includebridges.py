@@ -698,8 +698,6 @@ def main():
                         help='Waxman alpha')
     parser.add_argument('--nbridgeangles', default=4, type=int,
                         help='Number of bridge angles')
-    parser.add_argument('--bridgelen', default=.5, type=float,
-                        help='Length of the bridges (km)')
     parser.add_argument('--bridgespacing', default=0.5, type=float,
                         help='Spacing between the middle points of the bridge.')
     parser.add_argument('--bridgespeed', default=1.0, type=float,
@@ -752,15 +750,17 @@ def main():
 
     append_to_file(readmepath, 'vcount:{},ecount:{}'.format(
         g.vcount(), g.ecount()))
-    append_to_file(readmepath, 'diameter:{:.02f},bridgelen:{:.02f},'
-                   'bridgespacing:{:.02f}'.format(
-                       g.diameter(weights='length'),
-                       args.bridgelen, args.bridgespacing))
+    diam = g.diameter(weights='length')
 
     xmin, ymin = np.min(g['coords'], axis=0)
     xmax, ymax = np.max(g['coords'], axis=0)
     bounds = [xmin, ymin, xmax, ymax]
-    bridgelen = args.bridgelen
+    bridgelen = diam / 4
+
+    append_to_file(readmepath, 'diameter:{:.02f},bridgelen:{:.02f},'
+                   'bridgespacing:{:.02f}'.format(
+                       diam, bridgelen, args.bridgespacing))
+
     gridx, gridy = np.mgrid[bounds[0]:bounds[2]:(args.gridside*1j),
     bounds[1]:bounds[3]:(args.gridside*1j)]
     angrad = np.linspace(0, np.pi, args.nbridgeangles)
