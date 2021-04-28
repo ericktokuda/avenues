@@ -30,6 +30,7 @@ from itertools import product
 import matplotlib
 matplotlib.use('Agg')
 
+
 #############################################################
 ORIGINAL = 0
 BRIDGE = 1
@@ -183,7 +184,8 @@ def add_avenue(g, bridgeid, edge, bridgespacing, bridgespeed, choice, choicepara
     ndetours = np.round(vnorm / bridgespacing).astype(int) - 1
     if ndetours > 0: d = (vnorm / ndetours)
 
-    lastid = srcid  # Last vertex of the new bridge
+    avvertices = [srcid]
+    # lastid = srcid  # Last vertex of the new bridge
 
     for j in range(ndetours):
         i = j + 1  # 1-based index
@@ -199,11 +201,11 @@ def add_avenue(g, bridgeid, edge, bridgespacing, bridgespeed, choice, choicepara
 
         emptyball = True
         for i, id in enumerate(ids):
-            if id == lastid or id == srcid or id == tgtid:
+            if id == avvertices[-1] or id == srcid or id == tgtid:
                 continue
 
-            if not g.are_connected(lastid, id):  # Avoid multi-edges
-                g = add_wedge(g, lastid, id, BRIDGE, bridgespeed, bridgeid)
+            if not g.are_connected(avvertices[-1], id):  # Avoid multi-edges
+                g = add_wedge(g, avvertices[-1], id, BRIDGE, bridgespeed, bridgeid)
 
             g.vs[id]['type'] = BRIDGEACC
             emptyball = False
@@ -212,13 +214,14 @@ def add_avenue(g, bridgeid, edge, bridgespacing, bridgespeed, choice, choicepara
         if emptyball: # In case we cannot not find any vertex nearby
             return g, False
 
-        lastid = id
+        avvertices.append(id)
 
     # Last segment of the bridge
-    if not g.are_connected(lastid, tgtid):
-        g = add_wedge(g, lastid, tgtid, BRIDGE, bridgespeed, bridgeid)
+    if not g.are_connected(avvertices[-1], tgtid):
+        g = add_wedge(g, avvertices[-1], tgtid, BRIDGE, bridgespeed, bridgeid)
 
-    return g, True
+    avvertices.append(tgtid)
+    return g, avvertices, True
 
 ##########################################################
 def add_bridge(g, edge, origtree, spacing, bridgeid, nnearest, bridgespeed):
@@ -329,60 +332,64 @@ def extract_features(g, bridgespeed):
     return features
 
 ##########################################################
-def analyze_increment_of_bridges(gorig, bridgesexact, bridges, bridgespacing,
-                                 bridgespeed, accessibs, outdir, outcsv):
+def analyze_increment_of_bridge(bridgeid, gorig, es, bridgespacing, bridgespeed,
+                                coordstree):
+    info(bridgeid)
+    # g = add_bridge(g, endpoints, origtree, spacing, bridgeid, nnearest,
+    # bridgespeed)
+    # g, succ = add_avenue_accessib(g, bridgeid, es, bridgespacing,
+    #                               bridgespeed, accessibs)
+
+    g = gorig.copy()
+    orignedges = g.ecount()
+    g, avvertices, succ = add_avenue_closest(g, bridgeid, es, bridgespacing,
+                                 bridgespeed, coordstree)
+
+    if not succ: return [], [], []
+
+    g.vs[es[0]]['type'] = g.vs[es[1]]['type'] = BRIDGE
+
+    return avvertices, list(extract_features(g, bridgespeed).values())
+
+##########################################################
+def pool_func(params): return analyze_increment_of_bridge(*params)
+
+##########################################################
+def analyze_increment_of_bridges(gorig, bridges, bridgespacing,
+                                 bridgespeed, accessibs, nprocs, outdir):
     """Increment of @bridges to @g and extract features from each state. We add
     entrances/exit separated by @bridgespacing (+eps).
     The new edges have different speeds (@bridgespeed) in the shortest
-    paths computation. The results are
-    output to @outcsv."""
+    paths computation."""
     info(inspect.stack()[0][3] + '()')
 
-    nbridges = len(bridges)
-
     feats = extract_features(gorig, bridgespeed)
-    vals = [feats.values()]
+    # vals = [feats.values()]
 
-    m = gorig.ecount()
     ninvalid = 0  # Count the number of failure cases
     coordstree = cKDTree(gorig['coords'])
 
-    newedges = []
-    for bridgeid, es in enumerate(bridges):
-        info('bridgeid:{}'.format(bridgeid))
+    from multiprocessing import Pool
+    aux = product([gorig], bridges, [bridgespacing],
+                  [bridgespeed], [coordstree],)
+    aux = [list(a) for a in list(aux)] # Convert to list
+    [a.insert(0, i) for i, a in enumerate(list(aux))] # Add counter
 
-        g = gorig.copy()
-        # g = add_bridge(g, endpoints, origtree, spacing, bridgeid, nnearest,
-        # bridgespeed)
-        # g, succ = add_avenue_accessib(g, bridgeid, es, bridgespacing,
-        #                               bridgespeed, accessibs)
-        g, succ = add_avenue_closest(g, bridgeid, es, bridgespacing,
-                                     bridgespeed, coordstree)
+    if nprocs == 1:
+        info('Running serially (nprocs:{})'.format(nprocs))
+        ret = [pool_func(p) for p in aux]
+    else:
+        info('Running in parallel (nprocs:{})'.format(nprocs))
+        pool = Pool(nprocs)
+        ret = pool.map(pool_func, aux)
 
-        if not succ:
-            ninvalid += 1
-            continue
+    avvertices = [r[0] for r in ret]
+    vals = [r[1] for r in ret]
+    vals.insert(0, list(feats.values()))
+    pkl.dump(avvertices, open(pjoin(outdir, 'avenues.pkl'), 'wb'))
 
-        g.vs[es[0]]['type'] = g.vs[es[1]]['type'] = BRIDGE
-        avedges = []
-        for k in range(m, g.ecount()):
-            avedges.extend([g.es[k].source, g.es[k].target])
-
-        avvertices = []
-        [avvertices.append(x) for x in avedges if x not in avvertices]
-        newedges.append(avvertices)
-
-        vals.append(extract_features(g, bridgespeed).values())
-
-    brcoords = np.concatenate([g['coords'][bridges[:, 0]],
-                               g['coords'][bridges[:, 1]]],
-                              axis=1)
-    pkl.dump(newedges, open(pjoin(outdir, 'newedges.pkl'), 'wb'))
-    pkl.dump(brcoords, open(pjoin(outdir, 'brcoords.pkl'), 'wb'))
-    pkl.dump(bridgesexact, open(pjoin(outdir, 'brcoordsexact.pkl'), 'wb'))
-    
     df = pd.DataFrame(vals, columns=feats.keys())
-    df.to_csv(outcsv, index=False)
+    df.to_csv(pjoin(outdir, 'results.csv'), index=False)
     return ninvalid
 
 ##########################################################
@@ -661,25 +668,35 @@ def scale_coords(g, bbox):
         g.es[j]['length'] = l
     return g
 
-
 ##########################################################
-def get_dcoords(angrad, bridgelen, midpoint):
+def get_dcoords(angrad, bridgelen, refcoords):
+    """x is vertical and y is horizontal"""
     dcoords = np.ndarray((len(angrad), 2), dtype=float)
-    for i, a in enumerate(angrad):
-        if np.isclose(a, np.pi / 2, 0.01):
+    for i, b in enumerate(angrad):
+        a = b % (2 * np.pi) # Remove loops
+        if np.isclose(a, 0, .01) or np.isclose(a, np.pi, .01):
+            versorx, versory = 0, 1
+            # breakpoint()
+        elif np.isclose(a, np.pi / 2, 0.01) or np.isclose(a, 3 / 2 * np.pi, 0.01):
             versorx, versory = 1, 0
+            # breakpoint()
         else:
             z = np.tan(a)
-            versorx = 1 / np.sqrt(1 + z**2)
-            versory = z * versorx
-            versor = np.array([versorx, versory])
+            versory = 1 / np.sqrt(1 + z**2)
+            versorx = z * versory
 
-        def get_coords_delta(b, midpoint=midpoint, versor=versor):
-            h = geo.haversine(midpoint, midpoint + b * versor)
+        # Fix signals
+        if a > np.pi: versorx = -versorx
+        if a > np.pi / 2 and a < (3 / 2) * np.pi: versory = -versory
+
+        versor = np.array([versorx, versory])
+
+        def get_coords_delta(x, midpoint=refcoords, versor=versor):
+            h = geo.haversine(refcoords, refcoords + x * versor)
             return bridgelen - h
 
         d = scipy.optimize.bisect(get_coords_delta, 0, 0.1,
-        xtol=0.001, rtol=0.01)
+                                  xtol=0.001, rtol=0.01)
         dcoords[i, :] = d * versor
     return dcoords
 
@@ -707,6 +724,8 @@ def main():
                         help='Region of interest radius')
     parser.add_argument('--seed', default=0, type=int,
                         help='Random seed')
+    parser.add_argument('--nprocs', default=1, type=int,
+                        help='Number of processes (parallel)')
     parser.add_argument('--outdir', default='/tmp/out/',
                         help='Output directory')
     args = parser.parse_args()
@@ -720,9 +739,6 @@ def main():
 
     random.seed(args.seed)
     np.random.seed(args.seed)
-
-    outcsv = pjoin(args.outdir, 'results.csv')
-    # maxnedges = np.max(args.nbridges)
 
     if os.path.exists(args.graph):
         g, origids = parse_graphml(
@@ -761,20 +777,19 @@ def main():
                        diam, bridgelen, args.bridgespacing))
 
     gridx, gridy = np.mgrid[bounds[0]:bounds[2]:(args.gridside*1j),
-    bounds[1]:bounds[3]:(args.gridside*1j)]
-    angrad = np.linspace(0, np.pi, args.nbridgeangles)
+                            bounds[1]:bounds[3]:(args.gridside*1j)]
+    angrad = np.linspace(0, 2*np.pi, args.nbridgeangles, endpoint=False)
+    nbridges = gridx.shape[0] * gridx.shape[1] * args.nbridgeangles
 
     coordstree = cKDTree(g['coords'])
-    midpoint = np.array([(bounds[2] - bounds[0]) / 2,
+    refcoords = np.array([(bounds[2] - bounds[0]) / 2,
                          (bounds[3] - bounds[1]) / 2])
     
     # Calculate the (dx, dy) for each angle
-    dcoords = get_dcoords(angrad, bridgelen, midpoint)
+    dcoords = get_dcoords(angrad, bridgelen, refcoords)
     
-    
-    esexact = np.zeros((gridx.shape[0] * gridx.shape[1] * args.nbridgeangles, 4),
-                       dtype=float)
-    es = []
+    esexact = np.zeros((nbridges, 4), dtype=float)
+    es = np.zeros((nbridges, 2), dtype=int)
     i = 0
     for x, y in zip(gridx.flatten(), gridy.flatten()):
         grid0 = np.array([x, y])
@@ -783,21 +798,22 @@ def main():
             p = grid0 + dcoords[j, :]
             _, outtgt = coordstree.query(p, k=2)
             tgt = outtgt[1] if outtgt[0] == src else outtgt[0]
-            # esexact.append([grid0, p])
             esexact[i, :2] = grid0; esexact[i, 2:] = p
+            es[i, :] = [src, tgt]
             i += 1
-            es.append([src, tgt])
 
-    esexact = np.array(esexact)
-    es = np.array(es)
+    pkl.dump(esexact, open(pjoin(args.outdir, 'brcoordsexact.pkl'), 'wb'))
+    brcoords = np.concatenate([g['coords'][es[:, 0]],
+                               g['coords'][es[:, 1]]],
+                              axis=1)
+    pkl.dump(brcoords, open(pjoin(args.outdir, 'brcoords.pkl'), 'wb'))
 
-    # es = pick_bridge_endpoints(g, args.nbridges, args.bridgelen, UNIFORM,
-    #                            eps=bridgeleneps)
-
-    ninvalid = analyze_increment_of_bridges(g, esexact, es,
+    ninvalid = analyze_increment_of_bridges(g, es,
                                             args.bridgespacing,
                                             args.bridgespeed,
-                                            accessibs, args.outdir, outcsv)
+                                            accessibs, args.nprocs,
+                                            args.outdir)
+
     append_to_file(readmepath, 'ninvalid:{}'.format(ninvalid))
 
     info('Elapsed time:{}'.format(time.time()-t0))
