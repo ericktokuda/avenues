@@ -30,7 +30,6 @@ from itertools import product
 import matplotlib
 matplotlib.use('Agg')
 
-
 #############################################################
 ORIGINAL = 0
 BRIDGE = 1
@@ -679,7 +678,7 @@ def get_dcoords(angrad, bridgelen, midpoint):
             h = geo.haversine(midpoint, midpoint + b * versor)
             return bridgelen - h
 
-        d = scipy.optimize.bisect(get_coords_delta, 0, 0.05,
+        d = scipy.optimize.bisect(get_coords_delta, 0, 0.1,
         xtol=0.001, rtol=0.01)
         dcoords[i, :] = d * versor
     return dcoords
