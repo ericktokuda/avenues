@@ -401,60 +401,131 @@ def concat_results(resultsdir, outdir):
     info(inspect.stack()[0][3] + '()')
     dirs = os.listdir(resultsdir)
 
-    rows = []
+    rows = np.zeros((0, 6), dtype=object)
     for d in sorted(dirs):
         if not os.path.isdir(pjoin(resultsdir, d)): continue
         respath = pjoin(resultsdir, d, 'results.csv')
         if not os.path.exists(respath): continue
-        
+
         arrstr = d.split('_')
         print(arrstr)
-        speed = arrstr.pop().split('sp')[1]
-        spacing = arrstr.pop().split('brspacing')[1]
-        brlen = arrstr.pop().split('brlen')[1]
+        speed = arrstr.pop().split('brspe')[1]
+        spacing = arrstr.pop().split('brspa')[1]
+        # brlen = arrstr.pop().split('ci')[1]
         city = arrstr.pop()
 
         df = pd.read_csv(respath)
-        lens = df.g_pathlen_mean.to_numpy()
+        df2 = pd.read_csv(pjoin(resultsdir, d, 'gridcoords.csv'))
 
-        gains = []
-        origlen = lens[0]
-        for i in range(len(lens) - 1):
-            gains.append( np.abs((lens[i+1] - lens[i]) / origlen))
-            x = [np.mean(gains), np.std(gains), np.min(gains), np.max(gains)]
-            nums = ['{:.04f}'.format(xx) for xx in x]
-        row = [city, brlen, spacing, speed] + nums
-        rows.append(row)
+        gains = df.g_pathlen_mean[0] - df.g_pathlen_mean
+        gains = gains[1:].to_numpy() # First case is without bridge
+        n = len(gains)
+        col1 = np.array([city] * n).reshape(n, 1).astype(object)
+        col2 = np.array([speed] * n).reshape(n, 1).astype(object)
+        col3 = gains.reshape(n, 1).astype(object)
+        newrows = np.concatenate([col1, col2, df2.to_numpy(), col3], axis=1)
+        rows = np.concatenate([rows, newrows], axis=0)
 
-    cols = 'city,brlength,brspacing,brspeed,gainmean,' \
-        'gainstd,gainmin,gainmax'.split(',')
+    cols = 'city,brspeed,x,y,angrad,gain'.split(',')
     df = pd.DataFrame(rows, columns=cols)
     df.to_csv(pjoin(outdir, 'resultsall.csv'), index=False)
 
-def plot_each_results(resallpath, outdir):
+##########################################################
+def plot_xy_angle(resallpath, outdir):
+    plot4(resallpath, outdir)
+
+##########################################################
+def plot1(resallpath, outdir):
     df = pd.read_csv(resallpath)
-    # df = df.loc[df.brnpoints == 3]
-    for l in np.unique(df.brlength):
-        df2 = df.loc[df.brlength == l]
-        for m in ['gainmean', 'gainstd', 'gainmin', 'gainmax']:
-            figscale = 6
-            fig, ax = plt.subplots(figsize=(figscale, figscale))
-            for c in np.unique(df2.city):
-                df3 = df2.loc[df2.city == c]
-                ax.plot(df3.brspeed, df3[m] / l, label=c)
-            ax.set_xlabel('Bridges speed')
-            ax.set_ylabel('Normalized ' + m)
-            ax.set_ylim(0, 0.025)
-            fig.legend()
-            plt.tight_layout()
-            plt.savefig(pjoin(outdir, 'brlength{:.02f}_{}.png'.format(l, m)))
+    df = df.loc[(df.brspeed == 1.0) & (df.city == 'paris')]
+
+    xs = df.x.to_numpy()
+    ys = df.y.to_numpy()
+    angs = df.angrad.to_numpy()
+    gain = df.gain.to_numpy()
+    normgain = ((gain - np.min(gain)) / (np.max(gain) - np.min(gain)))
+
+    fig = plt.figure(figsize=(16, 16))
+    ax = fig.add_subplot(projection='3d')
+    sc = ax.scatter(xs, ys, angs, s=500, c=normgain, cmap='viridis',
+                    # vmin=0.01, vmax=.99)
+                    )
+    fig.colorbar(sc)
+    for ii in range(0, 360,1):
+        ax.elev = 10
+        ax.azim = ii
+        plt.savefig(pjoin(outdir, 'frame{:03d}.png'.format(ii)))
+
+##########################################################
+def plot2(resallpath, outdir):
+    df = pd.read_csv(resallpath)
+    df = df.loc[(df.brspeed == 1.0) & (df.city == 'paris')]
+
+    import plotly.express as px
+    fig = px.scatter_3d(df, x='x', y='y', z='angrad',
+                        color='gain', opacity=.5)
+    fig.show()
+
+##########################################################
+def plot3(resallpath, outdir):
+    df = pd.read_csv(resallpath)
+    df = df.loc[(df.brspeed == 1.0) & (df.city == 'paris')]
+
+    import plotly.express as px
+    gain = df.gain.to_numpy()
+    normgain = ((gain - np.min(gain)) / (np.max(gain) - np.min(gain)))
+
+    colours = []
+    for g in normgain:
+        colours.append('rgba(128, 0, 0, {})'.format(g))
+
+    import plotly.graph_objects as go
+    fig = go.Figure(data =[go.Scatter3d(x = df.x,
+                                        y = df.y,
+                                        z = df.angrad,
+                                        mode ='markers',
+                                        marker={
+                                            'opacity': .5,
+                                            'color': normgain,
+                                            'colorscale': 'viridis',
+                                            'showscale': True
+
+                                        })])
+
+    fig.update_scenes(zaxis_title='Angle')
+    fig.show()
+
+
+##########################################################
+def plot4(resallpath, outdir):
+    df = pd.read_csv(resallpath)
+
+    city = 'dublin'
+    df = df.loc[(df.brspeed == 1.0) & (df.city == city)]
+
+    import plotly.graph_objects as go
+    gain = df.gain.to_numpy()
+    normgain = ((gain - np.min(gain)) / (np.max(gain) - np.min(gain)))
+
+    fig = go.Figure()
+    for i in range(len(df)):
+        d = df.iloc[i]
+        fig.add_trace(go.Scatter3d(x=[d.x], y=[d.y], z=[d.angrad],
+                                   showlegend=False,
+                                   marker=dict(
+                                       color='red',
+                                       opacity=normgain[i])
+                                )
+                      )
+
+    fig.write_html(pjoin(outdir, city + '.html'))
 
 ##########################################################
 def main():
     info(inspect.stack()[0][3] + '()')
     t0 = time.time()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--results', default='/tmp/out/results.csv', help='Path to the results.csv file')
+    parser.add_argument('--resdir', required=True, help='Path to the results.csv file')
     parser.add_argument('--outdir', default='/tmp/out/', help='Output directory')
     args = parser.parse_args()
 
@@ -475,12 +546,9 @@ def main():
     # plot_heatmap(localfeats, args.outdir )
     # plot_pairwise_points(df, localfeats, args.outdir )
     # plot_avg_path_lengths(localfeats, args.outdir)
-    # resultsdir = '/home/frodo/results/bridges/20210415-bridges/seed1/'
-    # concat_results(resultsdir, args.outdir)
-    # return
-    # resallpath = '/home/frodo/results/bridges/20210413-bridges/resultsall.csv'
-    resallpath = '/home/frodo/results/bridges/20210415-bridges/seed1.csv'
-    plot_each_results(resallpath, args.outdir)
+    concat_results(args.resdir, args.outdir)
+    resallpath = pjoin(args.outdir, 'resultsall.csv')
+    plot_xy_angle(resallpath, args.outdir)
 
     info('Elapsed time:{}'.format(time.time()-t0))
     info('Output generated in {}'.format(args.outdir))
