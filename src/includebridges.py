@@ -4,6 +4,7 @@ We expect a network model or a graphml format with x,y attributes representing l
 and we incrementally add bridges (or detour routes) and calculate the
 shortest path lengths."""
 
+import time, os, sys, math, random
 from optimized import generate_waxman_adj
 from myutils import info, create_readme, append_to_file, graph, plot, geo
 import pickle as pkl
@@ -18,10 +19,6 @@ import igraph
 import matplotlib.collections as mc
 import matplotlib.pyplot as plt
 import argparse
-import time
-import os
-import sys
-import random
 from os.path import join as pjoin
 import inspect
 
@@ -356,7 +353,7 @@ def pool_func(params): return analyze_increment_of_bridge(*params)
 
 ##########################################################
 def analyze_increment_of_bridges(gorig, bridges, bridgespacing,
-                                 bridgespeed, accessibs, nprocs, outdir):
+                                 bridgespeed, nprocs, outdir):
     """Increment of @bridges to @g and extract features from each state. We add
     entrances/exit separated by @bridgespacing (+eps).
     The new edges have different speeds (@bridgespeed) in the shortest
@@ -389,7 +386,7 @@ def analyze_increment_of_bridges(gorig, bridges, bridgespacing,
     pkl.dump(avvertices, open(pjoin(outdir, 'avenues.pkl'), 'wb'))
 
     df = pd.DataFrame(vals, columns=feats.keys())
-    df.to_csv(pjoin(outdir, 'results.csv'), index=False)
+    df.to_csv(pjoin(outdir, 'results.csv'), index=False, float_format='%.4f')
     return ninvalid
 
 ##########################################################
@@ -674,21 +671,8 @@ def get_dcoords(angrad, bridgelen, refcoords):
     dcoords = np.ndarray((len(angrad), 2), dtype=float)
     for i, b in enumerate(angrad):
         a = b % (2 * np.pi) # Remove loops
-        if np.isclose(a, 0, .01) or np.isclose(a, np.pi, .01):
-            versorx, versory = 0, 1
-            # breakpoint()
-        elif np.isclose(a, np.pi / 2, 0.01) or np.isclose(a, 3 / 2 * np.pi, 0.01):
-            versorx, versory = 1, 0
-            # breakpoint()
-        else:
-            z = np.tan(a)
-            versory = 1 / np.sqrt(1 + z**2)
-            versorx = z * versory
-
-        # Fix signals
-        if a > np.pi: versorx = -versorx
-        if a > np.pi / 2 and a < (3 / 2) * np.pi: versory = -versory
-
+        versorx = math.sin(a)
+        versory = math.cos(a)
         versor = np.array([versorx, versory])
 
         def get_coords_delta(x, midpoint=refcoords, versor=versor):
@@ -752,14 +736,6 @@ def main():
         info('Either a graphml path OR waxman OR geometric')
         return
 
-    if args.accessibpath:
-        fh = open(args.accessibpath)
-        accessibs = np.array([float(x) for x in fh.read().strip().split('\n')])
-        accessibs = accessibs[origids]
-        fh.close()
-    else:
-        accessibs = np.ones(g.vcount(), dtype=float)
-
     visual = define_plot_layout(100, 1)
     plot_topology(g, g['coords'], pjoin(args.outdir, 'graph.pdf'), visual, .5)
 
@@ -778,7 +754,7 @@ def main():
 
     gridx, gridy = np.mgrid[bounds[0]:bounds[2]:(args.gridside*1j),
                             bounds[1]:bounds[3]:(args.gridside*1j)]
-    angrad = np.linspace(0, 2*np.pi, args.nbridgeangles, endpoint=False)
+    angrad = np.linspace(-np.pi, np.pi, args.nbridgeangles, endpoint=False)
     nbridges = gridx.shape[0] * gridx.shape[1] * args.nbridgeangles
 
     coordstree = cKDTree(g['coords'])
@@ -811,7 +787,7 @@ def main():
     ninvalid = analyze_increment_of_bridges(g, es,
                                             args.bridgespacing,
                                             args.bridgespeed,
-                                            accessibs, args.nprocs,
+                                            args.nprocs,
                                             args.outdir)
 
     append_to_file(readmepath, 'ninvalid:{}'.format(ninvalid))
