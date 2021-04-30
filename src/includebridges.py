@@ -370,6 +370,7 @@ def analyze_increment_of_bridges(gorig, bridges, bridgespacing,
     avvertices = [r[0] for r in ret]
     avgplens = [r[1] for r in ret]
 
+    pkl.dump(avvertices, open(pjoin(outdir, 'avenues.pkl'), 'wb'))
     with open(pjoin(outdir, 'avenues.txt'), 'w') as fh:
         for av in avvertices: fh.write(','.join(str(v) for v in av)); fh.write('\n')
 
@@ -691,7 +692,7 @@ def calculate_bridge_edpoints(coords, bounds, gridx, gridy, nbridges,
             i += 1
 
     # Store bridge endpoints (grid and real)
-    # pkl.dump(esexact, open(pjoin(outdir, 'brcoordsexact.pkl'), 'wb'))
+    pkl.dump(esexact, open(pjoin(outdir, 'brcoordsexact.pkl'), 'wb'))
     brcoords = np.concatenate([coords[es[:, 0]],coords[es[:, 1]]],
                               axis=1)
     pkl.dump(brcoords, open(pjoin(outdir, 'brcoords.pkl'), 'wb'))
