@@ -745,7 +745,7 @@ def export_results(nbridges, graph, bridgespeed, brcoordsexact,
     brexactangle = np.around(brexactangle, ndigits)
     brcoords = np.around(brcoords, ndigits)
     brangle = np.around(brangle, ndigits)
-    gains = np.around(gains, ndigits)
+    # gains = np.around(gains, ndigits) # Gains are generally very small
 
     x = np.concatenate([col1, col2, brcoordsexact, brexactangle,
                         brcoords, brangle, gains], axis=1)
