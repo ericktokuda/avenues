@@ -405,7 +405,6 @@ def get_bridge_coords(resdir, ndigits):
         open(pjoin(resdir, 'brcoords.pkl'), 'rb'))
     avenues = pickle.load(
         open(pjoin(resdir, 'avenues.pkl'), 'rb'))
-    # info(brcoords.shape, brcoords.shape, len(avenues))
 
     data = np.zeros((len(brcoords), 10), dtype=float)
     for i in range(brcoords.shape[0]):
@@ -426,49 +425,24 @@ def load_all_results(resultsdir, outdir):
     """Concatenate all results into a single tabular file."""
     csvpath = pjoin(outdir, 'resultsall.csv')
     info(inspect.stack()[0][3] + '()')
-    
+
     if os.path.exists(csvpath):
         info('Loading existing {}'.format(csvpath))
         return pd.read_csv(csvpath)
-        
+
     dirs = os.listdir(resultsdir)
 
+    df = []
     ndigits = 4
     rows = np.zeros((0, 13), dtype=object)
     for d in sorted(dirs):
-        curdir = pjoin(resultsdir, d)
-        if not os.path.isdir(curdir): continue
-        
-        respath = pjoin(curdir, 'results.csv')
-        if not os.path.exists(respath): continue
+        respath = pjoin(resultsdir, d, 'results.csv')
+        if not os.path.exists(os.path.isdir(respath)): continue
+        df2 = pd.read_csv(respath)
+        if len(df) == 0: df = df2
+        else: df = pd.concat([df, df2], ignore_index=True)
 
-        arrstr = d.split('_')
-        print(arrstr)
-        speed = arrstr.pop().split('brspe')[1]
-        spacing = arrstr.pop().split('brspa')[1]
-        city = arrstr.pop()
-
-        df = pd.read_csv(respath)
-        df2 = pd.read_csv(pjoin(curdir, 'gridcoords.csv'))
-
-        gains = df.g_pathlen_mean[0] - df.g_pathlen_mean
-        gains = gains[1:].to_numpy() # First case is without bridge
-        n = len(gains)
-        col1 = np.array([city] * n).reshape(n, 1).astype(object)
-        col2 = np.array([speed] * n).reshape(n, 1).astype(object)
-        collast = np.around(gains.reshape(n, 1), ndigits)
-        brcoords = get_bridge_coords(curdir, ndigits)
-        newrows = np.concatenate([col1, col2,
-                                  brcoords, collast], axis=1)
-        rows = np.concatenate([rows, newrows], axis=0)
-
-    cols = ('city,brspeed,' \
-        'brexactsrcx,brexactsrcy,brexacttgtx,brexacttgty,brexactangle,' \
-        'brsrcx,brsrcy,brtgtx,brtgty,brangle,' \
-        'gain').split(',')
-    df = pd.DataFrame(rows, columns=cols)
-    df.to_csv(pjoin(outdir, 'resultsall.csv'), index=False,
-              float_format='%.4f')
+    df.to_csv(csvpath, index=False)
     return df
 
 ##########################################################
@@ -476,43 +450,22 @@ def plot_xy_angle(dfall, outdir):
     plot2(dfall, outdir)
 
 ##########################################################
-def plot1(dfall, outdir):
-    df = dfall.loc[(dfall.brspeed == 1.0) & (dfall.city == 'paris')]
-
-    xs = df.brexactsrcx.to_numpy()
-    ys = df.brexactsrcy.to_numpy()
-    angs = df.brexactangle.to_numpy()
-    gain = df.gain.to_numpy()
-    normgain = ((gain - np.min(gain)) / (np.max(gain) - np.min(gain)))
-
-    fig = plt.figure(figsize=(16, 16))
-    ax = fig.add_subplot(projection='3d')
-    sc = ax.scatter(xs, ys, angs, s=500, c=normgain, cmap='viridis',
-                    # vmin=0.01, vmax=.99)
-                    )
-    fig.colorbar(sc)
-    for ii in range(0, 360,1):
-        ax.elev = 10
-        ax.azim = ii
-        plt.savefig(pjoin(outdir, 'frame{:03d}.png'.format(ii)))
-
-##########################################################
 def plot2(dfall, outdir):
     import plotly.express as px
 
     dfall.brangle = dfall.brangle *180 / np.pi
     dfall.brexactangle = dfall.brexactangle *180 / np.pi
-    
+
     for city in np.unique(dfall.city):
         for sp in np.unique(dfall.brspeed):
             df = dfall.loc[(dfall.city == city) & (dfall.brspeed == sp)]
 
-            # fig = px.scatter_3d(df, x='brsrcx',
-            #                     y='brsrcy', z='brangle',
-            fig = px.scatter_3d(df, x='brexactsrcx',
-                                y='brexactsrcy', z='brexactangle',
+            fig = px.scatter_3d(df, x='brsrcx',
+                                y='brsrcy', z='brangle',
+            # fig = px.scatter_3d(df, x='brexactsrcx',
+                                # y='brexactsrcy', z='brexactangle',
                                 color='gain',
-                                color_continuous_scale=px.colors.sequential.Viridis,
+                                # color_continuous_scale=px.colors.sequential.Viridis,
                                 opacity=.5,
                                 title='Bridge gain for points in the grid')
 
@@ -558,22 +511,6 @@ def main():
 
     os.makedirs(args.outdir, exist_ok=True)
 
-    # df = pd.read_csv(args.results)
-    # localfeats = ['pathlen', 'degree', 'betwv', 'divers', 'clucoeff', 'clos']
-
-    # plot_global(df, args.outdir)
-    # plot_local_individually(df, args.outdir)
-    # plot_local_mean(df, args.outdir)
-    # plot_corr_all(df, localfeats, args.outdir)
-
-    # plot_hists(df, localfeats, args.outdir)
-    # plot_densities(df, localfeats, args.outdir)
-    # compare_densities(df, localfeats, args.outdir)
-    # plot_densities_all(localfeats, args.outdir)
-    # plot_heatmap(localfeats, args.outdir )
-    # plot_pairwise_points(df, localfeats, args.outdir )
-    # plot_avg_path_lengths(localfeats, args.outdir)
-    resallpath = pjoin(args.outdir, 'resultsall.csv')
     dfall = load_all_results(args.resdir, args.outdir)
     plot_xy_angle(dfall, args.outdir)
 
