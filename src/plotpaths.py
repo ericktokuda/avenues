@@ -13,7 +13,8 @@ import numpy as np
 # import matplotlib; matplotlib.use('Agg')
 import matplotlib
 import matplotlib.pyplot as plt
-from myutils import info, create_readme
+import matplotlib.collections as mc
+from myutils import info, create_readme, graph
 import pandas as pd
 import scipy.stats
 import pickle
@@ -472,7 +473,7 @@ def plot2(dfall, outdir):
             fig.update_scenes(xaxis_title='x')
             fig.update_scenes(yaxis_title='y')
             fig.update_scenes(zaxis_title='Angle')
-            outpath = pjoin(outdir, '{}_sp{}.html'.format(city, sp))
+            outpath = pjoin(outdir, '{}_sp{}_3d.html'.format(city, sp))
             fig.write_html(outpath)
 
 ##########################################################
@@ -500,12 +501,82 @@ def plot3(dfall, outdir):
             outpath = pjoin(outdir, '{}_sp{}.html'.format(city, sp))
             fig.write_html(outpath)
 
+def load_list_of_lists(fpath):
+    fh = open(fpath)
+    mylist = []
+
+    for l in fh:
+        mylist.append([int(ll) for ll in l.strip().split(',')])
+
+    fh.close()
+    return mylist
+
+##########################################################
+def plot_avenues_all(resdir, graphmldir, outdir):
+    """Plot all avenues coloured by gain """
+    info(inspect.stack()[0][3] + '()')
+
+    for d in sorted(os.listdir(resdir)):
+        info('d:{}'.format(d))
+        dpath = pjoin(resdir, d)
+        if not os.path.isdir(dpath): continue
+        df = pd.read_csv(pjoin(dpath, 'results.csv'))
+        city = df.loc[0].city
+        speed = df.loc[0].brspeed
+        gains = df.gain.to_numpy()
+
+        avpath = pjoin(resdir, d, 'avenues.txt')
+        avs = load_list_of_lists(avpath)
+
+        g = graph.simplify_graphml(pjoin(graphmldir, city + '.graphml'))
+        coords = np.array([(x, y) for x, y in zip(g.vs['x'], g.vs['y'])])
+        # coords[avs[3]] gives the coordinates of the av points
+
+        shppath = ''
+        ax = None
+        from myutils import plot
+
+        for attrs in [('lon', 'lat'), ('posx', 'posy'), ('x', 'y')]:
+            if attrs[0] in g.vertex_attributes():
+                xattr = 'x'; yattr = 'y'
+
+        vcoords = np.array([(x, y) for x, y in zip(g.vs[xattr], g.vs[yattr])])
+        vcoords = vcoords.astype(float)
+
+        ecoords = []
+        for e in g.es:
+            ecoords.append([ [float(g.vs[e.source]['x']), float(g.vs[e.source]['y'])],
+                    [float(g.vs[e.target]['x']), float(g.vs[e.target]['y'])], ])
+
+        ax = plot.plot_graph_coords(vcoords, ecoords, ax, shppath)
+
+        # Plot avenues with width proportional to the gain
+        refgain = 5 / np.max(gains)
+        avcoords = []
+        ws = []
+        for i, av in enumerate(avs):
+            src = av[0]
+            gain = gains[i] * refgain
+            ws.extend([gain] * (len(av) - 1))
+            for tgt in av[1:]:
+                avcoords.append(coords[[src, tgt]])
+                src = tgt
+
+        segs = mc.LineCollection(avcoords, colors='r',
+                                 linewidths=ws, alpha=.6) # edges
+        ax.add_collection(segs)
+        ax.axis('off')
+        plt.tight_layout()
+        plotpath = pjoin(outdir, '{}_sp{}_gains.png'.format(city, speed))
+        plt.savefig(plotpath)
+
 ##########################################################
 def main():
     info(inspect.stack()[0][3] + '()')
     t0 = time.time()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--resdir', required=True, help='Path to the results.csv file')
+    parser.add_argument('--resdir', required=True,
+                        help='Path to all the execution folders')
     parser.add_argument('--outdir', default='/tmp/out/', help='Output directory')
     args = parser.parse_args()
 
@@ -513,6 +584,10 @@ def main():
 
     dfall = load_all_results(args.resdir, args.outdir)
     plot_xy_angle(dfall, args.outdir)
+
+    pardir = os.path.dirname(os.path.dirname(args.resdir))
+    graphmldir = pjoin(pardir, '0_graphml')
+    plot_avenues_all(args.resdir, graphmldir, args.outdir)
 
     info('Elapsed time:{}'.format(time.time()-t0))
     info('Output generated in {}'.format(args.outdir))
