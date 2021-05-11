@@ -31,6 +31,7 @@ def plot_global(df, outdir):
     axs.errorbar(list(range(len(y))), y, yerr=df.g_pathlen_std)
     axs.set_ylim(0, np.max(y)*1.2)
     plt.savefig(pjoin(outdir, 'global.png'))
+    plt.close()
 
 ##########################################################
 def plot_local_individually(df, outdir):
@@ -50,6 +51,7 @@ def plot_local_individually(df, outdir):
     axs.set_ylabel('Length')
     axs.set_title('Individual path length for {} regions'.format(len(cols)))
     plt.savefig(pjoin(outdir, 'local_individually.png'))
+    plt.close()
 
 ##########################################################
 def plot_local_mean(df, outdir):
@@ -413,12 +415,12 @@ def get_bridge_coords(resdir, ndigits):
         delta = brcoordsexact[i, :2] - brcoordsexact[i, 2:]
         angrad = math.atan2(delta[1], delta[0])
         data[i, 4] = angrad
-        
+
         data[i, 5:9] = brcoords[i, :]
         delta = brcoords[i, :2] - brcoords[i, 2:]
         angrad = math.atan2(delta[1], delta[0])
         data[i, 9] = angrad
-        
+
     return np.around(data, ndigits)
 
 ##########################################################
@@ -447,58 +449,68 @@ def load_all_results(resultsdir, outdir):
     return df
 
 ##########################################################
-def plot_xy_angle(dfall, outdir):
-    plot2(dfall, outdir)
-
-##########################################################
-def plot2(dfall, outdir):
+def plot_3d_cmap(dfall, exact, outdirarg):
+    outdir = pjoin(outdirarg, '3d_cmap')
+    os.makedirs(outdir, exist_ok=True)
     import plotly.express as px
 
     dfall.brangle = dfall.brangle *180 / np.pi
     dfall.brexactangle = dfall.brexactangle *180 / np.pi
 
+    x = 'brexactsrcx' if exact else 'brsrcx'
+    y = 'brexactsrcy' if exact else 'brsrcy'
+    z = 'brexactangle' if exact else 'brangle'
+    suff = 'exact' if exact else ''
     for city in np.unique(dfall.city):
         for sp in np.unique(dfall.brspeed):
             df = dfall.loc[(dfall.city == city) & (dfall.brspeed == sp)]
 
-            fig = px.scatter_3d(df, x='brsrcx',
-                                y='brsrcy', z='brangle',
-            # fig = px.scatter_3d(df, x='brexactsrcx',
-                                # y='brexactsrcy', z='brexactangle',
+            fig = px.scatter_3d(df, x=x, y=y, z=z,
                                 color='gain',
-                                # color_continuous_scale=px.colors.sequential.Viridis,
+                                color_continuous_scale=px.colors.sequential.Viridis,
                                 opacity=.5,
                                 title='Bridge gain for points in the grid')
 
             fig.update_scenes(xaxis_title='x')
             fig.update_scenes(yaxis_title='y')
             fig.update_scenes(zaxis_title='Angle')
-            outpath = pjoin(outdir, '{}_sp{}_3d.html'.format(city, sp))
+            outpath = pjoin(outdir, '{}_sp{}_{}_3dcmap.html'.format(city, sp, suff))
             fig.write_html(outpath)
 
 ##########################################################
-def plot3(dfall, outdir):
+def plot_3d_sizes(dfall, exact, outdirarg):
+    outdir = pjoin(outdirarg, '3d_sizes')
+    os.makedirs(outdir, exist_ok=True)
+    x = 'brexactsrcx' if exact else 'brsrcx'
+    y = 'brexactsrcy' if exact else 'brsrcy'
+    z = 'brexactangle' if exact else 'brangle'
+    suff = 'exact' if exact else ''
+
     for city in np.unique(dfall.city):
         for sp in np.unique(dfall.brspeed):
             df = dfall.loc[(dfall.city == city) & (dfall.brspeed == sp)]
 
             import plotly.graph_objects as go
             gain = df.gain.to_numpy()
+            gain = np.log(gain+.0000001)
             normgain = ((gain - np.min(gain)) / (np.max(gain) - np.min(gain)))
+            # normgain += 1.01
 
             fig = go.Figure()
             for i in range(len(df)):
                 d = df.iloc[i]
-                fig.add_trace(go.Scatter3d(x=[d.brexactsrcx], y=[d.brexactsrcy],
-                                        z=[d.brexactangle],
+                fig.add_trace(go.Scatter3d(x=[d[x]], y=[d[y]],
+                                        z=[d[z]],
                                         showlegend=False,
                                         marker=dict(
+                                            size=normgain[i]*10,
                                             color='red',
-                                            opacity=normgain[i])
+                                            opacity=.5)
                                         )
                             )
 
-            outpath = pjoin(outdir, '{}_sp{}.html'.format(city, sp))
+            # outpath = pjoin(outdir, '{}_sp{}.html'.format(city, sp))
+            outpath = pjoin(outdir, '{}_sp{}_{}_3dsize.html'.format(city, sp, suff))
             fig.write_html(outpath)
 
 def load_list_of_lists(fpath):
@@ -512,9 +524,76 @@ def load_list_of_lists(fpath):
     return mylist
 
 ##########################################################
-def plot_avenues_all(resdir, graphmldir, outdir):
+def plot_grid(resdir, graphmldir, outdirarg):
     """Plot all avenues coloured by gain """
     info(inspect.stack()[0][3] + '()')
+
+    outdir = pjoin(outdirarg, 'grid')
+    os.makedirs(outdir, exist_ok=True)
+    plotted = set()
+    for d in sorted(os.listdir(resdir)):
+        info('d:{}'.format(d))
+        dpath = pjoin(resdir, d)
+        if not os.path.isdir(dpath): continue
+        df = pd.read_csv(pjoin(dpath, 'results.csv'))
+        city = df.loc[0].city
+        speed = df.loc[0].brspeed
+        gains = df.gain.to_numpy()
+
+        if city in plotted: continue
+        plotted.add(city)
+
+        gridpath = pjoin(resdir, d, 'brcoordsexact.pkl')
+        # avs = load_list_of_lists(avpath)
+        gridedges = pickle.load(open(gridpath, 'rb'))
+        # grid0, grid1 = gridedges[:, 0:2], gridedges[:, 2:]
+
+        g = graph.simplify_graphml(pjoin(graphmldir, city + '.graphml'))
+        coords = np.array([(x, y) for x, y in zip(g.vs['x'], g.vs['y'])])
+        # coords[avs[3]] gives the coordinates of the av points
+
+        shppath = ''
+        ax = None
+        from myutils import plot
+
+        for attrs in [('lon', 'lat'), ('posx', 'posy'), ('x', 'y')]:
+            if attrs[0] in g.vertex_attributes():
+                xattr = 'x'; yattr = 'y'
+
+        vcoords = np.array([(x, y) for x, y in zip(g.vs[xattr], g.vs[yattr])])
+        vcoords = vcoords.astype(float)
+
+        ecoords = []
+        for e in g.es:
+            ecoords.append([ [float(g.vs[e.source]['x']), float(g.vs[e.source]['y'])],
+                    [float(g.vs[e.target]['x']), float(g.vs[e.target]['y'])], ])
+
+        ax = plot.plot_graph_coords(vcoords, ecoords, ax, shppath)
+        ax.scatter(gridedges[:, 0], gridedges[:, 1], c='red')
+
+        # Plot avenues with width proportional to the gain
+        segs = []
+        for i in range(gridedges.shape[0]):
+            src, tgt = gridedges[i, 0:2], gridedges[i, 2:]
+            edge = [src, tgt]
+            segs.append([src, tgt])
+
+        segs = mc.LineCollection(segs, colors='b',
+                                 linewidths=1, alpha=.4) # edges
+        ax.add_collection(segs)
+
+        ax.axis('off')
+        plt.tight_layout()
+        plotpath = pjoin(outdir, '{}_grid.png'.format(city))
+        plt.savefig(plotpath)
+        plt.close()
+
+##########################################################
+def plot_avenues_all(resdir, graphmldir, outdirarg):
+    """Plot all avenues coloured by gain """
+    info(inspect.stack()[0][3] + '()')
+    outdir = pjoin(outdirarg, 'gains')
+    os.makedirs(outdir, exist_ok=True)
 
     for d in sorted(os.listdir(resdir)):
         info('d:{}'.format(d))
@@ -569,6 +648,7 @@ def plot_avenues_all(resdir, graphmldir, outdir):
         plt.tight_layout()
         plotpath = pjoin(outdir, '{}_sp{}_gains.png'.format(city, speed))
         plt.savefig(plotpath)
+        plt.close()
 
 ##########################################################
 def main():
@@ -583,10 +663,13 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
 
     dfall = load_all_results(args.resdir, args.outdir)
-    plot_xy_angle(dfall, args.outdir)
+    plot_3d_cmap(dfall, True, args.outdir)
+    plot_3d_cmap(dfall, False, args.outdir)
+    plot_3d_sizes(dfall, True, args.outdir)
 
     pardir = os.path.dirname(os.path.dirname(args.resdir))
     graphmldir = pjoin(pardir, '0_graphml')
+    plot_grid(args.resdir, graphmldir, args.outdir)
     plot_avenues_all(args.resdir, graphmldir, args.outdir)
 
     info('Elapsed time:{}'.format(time.time()-t0))
