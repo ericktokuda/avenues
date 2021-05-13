@@ -450,7 +450,8 @@ def load_all_results(resultsdir, outdir):
 
 ##########################################################
 def plot_3d_cmap(dfall, exact, outdirarg):
-    outdir = pjoin(outdirarg, '3d_cmap')
+    suff = 'exact' if exact else ''
+    outdir = pjoin(outdirarg, '3d_cmap_' + suff)
     os.makedirs(outdir, exist_ok=True)
     import plotly.express as px
 
@@ -460,12 +461,20 @@ def plot_3d_cmap(dfall, exact, outdirarg):
     x = 'brexactsrcx' if exact else 'brsrcx'
     y = 'brexactsrcy' if exact else 'brsrcy'
     z = 'brexactangle' if exact else 'brangle'
-    suff = 'exact' if exact else ''
     for city in np.unique(dfall.city):
         for sp in np.unique(dfall.brspeed):
             df = dfall.loc[(dfall.city == city) & (dfall.brspeed == sp)]
 
+            gains = np.array(df.gain)
+            threshid  = int(.95 * len(df)) # 10% wiht the greatest values
+            thresh = sorted(gains)[threshid]
+
+            texts = []
+            for j in range(len(df)):
+                texts.append(str(j) if gains[j] > thresh else '')
+
             fig = px.scatter_3d(df, x=x, y=y, z=z,
+                                text=texts,
                                 color='gain',
                                 color_continuous_scale=px.colors.sequential.Viridis,
                                 opacity=.5,
@@ -500,19 +509,21 @@ def plot_3d_sizes(dfall, exact, outdirarg):
             for i in range(len(df)):
                 d = df.iloc[i]
                 fig.add_trace(go.Scatter3d(x=[d[x]], y=[d[y]],
-                                        z=[d[z]],
-                                        showlegend=False,
-                                        marker=dict(
-                                            size=normgain[i]*10,
-                                            color='red',
-                                            opacity=.5)
-                                        )
-                            )
+                                           z=[d[z]],
+                                           showlegend=False,
+                                           marker=dict(
+                                               size=normgain[i]*10,
+                                               color='red',
+                                               opacity=.5)
+                                           )
+                              )
+
 
             # outpath = pjoin(outdir, '{}_sp{}.html'.format(city, sp))
             outpath = pjoin(outdir, '{}_sp{}_{}_3dsize.html'.format(city, sp, suff))
             fig.write_html(outpath)
 
+##########################################################
 def load_list_of_lists(fpath):
     fh = open(fpath)
     mylist = []
@@ -630,6 +641,8 @@ def plot_avenues_all(resdir, graphmldir, outdirarg):
         ax = plot.plot_graph_coords(vcoords, ecoords, ax, shppath)
 
         # Plot avenues with width proportional to the gain
+        threshid  = int(.95 * len(df)) # 10% wiht the greatest values
+        thresh = sorted(gains)[threshid]
         refgain = 5 / np.max(gains)
         avcoords = []
         ws = []
@@ -640,6 +653,11 @@ def plot_avenues_all(resdir, graphmldir, outdirarg):
             for tgt in av[1:]:
                 avcoords.append(coords[[src, tgt]])
                 src = tgt
+
+            if gains[i] > thresh: # Plot label just if above threshold
+                midid = int(len(av) / 2)
+                textcoords = (coords[av[midid-1]] + coords[av[midid]]) / 2
+                ax.text(textcoords[0], textcoords[1], i)
 
         segs = mc.LineCollection(avcoords, colors='r',
                                  linewidths=ws, alpha=.6) # edges
@@ -663,9 +681,9 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
 
     dfall = load_all_results(args.resdir, args.outdir)
-    plot_3d_cmap(dfall, True, args.outdir)
-    plot_3d_cmap(dfall, False, args.outdir)
-    plot_3d_sizes(dfall, True, args.outdir)
+    plot_3d_cmap(dfall.copy(), True, args.outdir)
+    plot_3d_cmap(dfall.copy(), False, args.outdir)
+    plot_3d_sizes(dfall.copy(), True, args.outdir)
 
     pardir = os.path.dirname(os.path.dirname(args.resdir))
     graphmldir = pjoin(pardir, '0_graphml')
