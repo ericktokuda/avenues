@@ -13,6 +13,8 @@ import matplotlib; matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pandas as pd
 from myutils import info, create_readme, append_to_file, graph
+from ventropy import calculate_rastered_graph_entropy
+from lacuncaller import calculate_lacunarity
 
 ##########################################################
 def extract_degree_feats(g):
@@ -36,18 +38,20 @@ def extract_degree_feats(g):
     return [degrmean, degrstd, fr[3], fr[4], fr[5]]
 
 ##########################################################
-def extract_angle_feats(g):
+def extract_angle_entropy(g, bins):
+    """Extract orientation from each edge. We adopt the angle 0 from a given point as the horizontal vector pointing to the right. Angles increase increase anti-clockwise.
+    """
     coords = np.array([(x, y) for x, y in zip(g.vs['x'], g.vs['y'])])
     angles = - np.ones(g.ecount(), dtype=float)
     for i, e in enumerate(g.es()):
         s, t = e.source, e.target
         sx, sy = coords[s, :]
         tx, ty = coords[t, :]
-        angles[i]= np.arctan((ty - sy) / (tx - sx))
+        if tx - sx == 0: angles[i] = 0
+        else: angles[i] = np.arctan((ty - sy) / (tx - sx))
 
-    #TODO: return entropy of angles or of distribution of angles?
-    breakpoint()
-    
+    distr, _ = np.histogram(angles, bins=bins, density=True)
+    return -(distr*np.log(np.abs(distr))).sum()
 
 ##########################################################
 def main():
@@ -65,13 +69,32 @@ def main():
     files = sorted(os.listdir(args.graphsdir))
     data = []
 
+    # Angle feature params
+    bins = np.arange(-np.pi/2, +np.pi/2, np.pi/6)
+
+    # Node entropy params
+    sigma = 1000        # Std (in meters) used for the gaussian kernel
+    max_ratio = 0.2     # Thresh for high dens. regions (rel. to maximum)
+    min_width = 100     # Min. width (in meters) allowed for the urban area
+
+    # Lacunarity params
+    px_per_km = 100 # To obtain per meter, divide by 1000
+    max_radius = 100
+    delta_radius = 5
+
     for f in files:
         graphml = pjoin(args.graphsdir, f)
         if not graphml.endswith('.graphml'): continue
         info('f:{}'.format(f))
         g = graph.simplify_graphml(graphml)
         # degrfeats = extract_degree_feats(g)
-        angfeats = extract_angle_feats(g)
+        entropyan = extract_angle_entropy(g, bins)
+        entropyvx = calculate_rastered_graph_entropy(graphml, sigma, max_ratio,
+                                                    min_width)
+        radii, lacun = calculate_lacunarity(graphml, max_radius, delta_radius,
+                                            px_per_km)
+        breakpoint()
+        # row = angfeats + degrfeats
 
     # data.append([city, degrmean, degrstd, fr[3], fr[4], fr[5]])
     df = pd.DataFrame(data, columns=['city', 'degrmean', 'degrstd',

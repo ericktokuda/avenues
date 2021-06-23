@@ -466,7 +466,7 @@ def plot_3d_cmap(dfall, exact, outdirarg):
             df = dfall.loc[(dfall.city == city) & (dfall.brspeed == sp)]
 
             gains = np.array(df.gain)
-            threshid  = int(.95 * len(df)) # 10% wiht the greatest values
+            threshid  = int(.97 * len(df)) # 10% wiht the greatest values
             thresh = sorted(gains)[threshid]
 
             texts = []
@@ -474,10 +474,10 @@ def plot_3d_cmap(dfall, exact, outdirarg):
                 texts.append(str(j) if gains[j] > thresh else '')
 
             fig = px.scatter_3d(df, x=x, y=y, z=z,
-                                text=texts,
+                                # text=texts,
                                 color='gain',
                                 color_continuous_scale=px.colors.sequential.Viridis,
-                                opacity=.5,
+                                opacity=.7,
                                 title='Bridge gain for points in the grid')
 
             fig.update_scenes(xaxis_title='x')
@@ -641,11 +641,15 @@ def plot_avenues_all(resdir, graphmldir, outdirarg):
         ax = plot.plot_graph_coords(vcoords, ecoords, ax, shppath)
 
         # Plot avenues with width proportional to the gain
-        threshid  = int(.95 * len(df)) # 10% wiht the greatest values
+        threshid  = int(.97 * len(df)) # 10% wiht the greatest values
         thresh = sorted(gains)[threshid]
         refgain = 5 / np.max(gains)
         avcoords = []
         ws = []
+        acc = 0
+        cmap = matplotlib.cm.get_cmap('viridis')
+        normgains = (gains  - np.min(gains))/  (np.max(gains) - np.min(gains))
+        colors = []
         for i, av in enumerate(avs):
             src = av[0]
             gain = gains[i] * refgain
@@ -654,14 +658,24 @@ def plot_avenues_all(resdir, graphmldir, outdirarg):
                 avcoords.append(coords[[src, tgt]])
                 src = tgt
 
+            if gains[i] < thresh: # skip if below gain
+                continue
+
+            acc += 1
+            colors.append(cmap(normgains[i]))
             if gains[i] > thresh: # Plot label just if above threshold
                 midid = int(len(av) / 2)
                 textcoords = (coords[av[midid-1]] + coords[av[midid]]) / 2
-                ax.text(textcoords[0], textcoords[1], i)
+                # ax.text(textcoords[0], textcoords[1], i)
 
-        segs = mc.LineCollection(avcoords, colors='r',
-                                 linewidths=ws, alpha=.6) # edges
+        info('Avenues plotted :{}'.format(acc))
+
+        
+        # segs = mc.LineCollection(avcoords, colors='r',
+        segs = mc.LineCollection(avcoords, colors=colors,
+                                 linewidths=ws, alpha=.8) # edges
         ax.add_collection(segs)
+        plt.colorbar(segs)
         ax.axis('off')
         plt.tight_layout()
         plotpath = pjoin(outdir, '{}_sp{}_gains.png'.format(city, speed))
@@ -683,11 +697,12 @@ def main():
     dfall = load_all_results(args.resdir, args.outdir)
     plot_3d_cmap(dfall.copy(), True, args.outdir)
     plot_3d_cmap(dfall.copy(), False, args.outdir)
+    plot_3d_cmap(dfall.copy(), True, args.outdir)
     plot_3d_sizes(dfall.copy(), True, args.outdir)
 
     pardir = os.path.dirname(os.path.dirname(args.resdir))
     graphmldir = pjoin(pardir, '0_graphml')
-    plot_grid(args.resdir, graphmldir, args.outdir)
+    # plot_grid(args.resdir, graphmldir, args.outdir)
     plot_avenues_all(args.resdir, graphmldir, args.outdir)
 
     info('Elapsed time:{}'.format(time.time()-t0))
