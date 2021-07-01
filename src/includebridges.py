@@ -416,7 +416,7 @@ def get_dcoords(angrad, bridgelen, refcoords):
             h = geo.haversine(refcoords, refcoords + x * versor)
             return bridgelen - h
 
-        d = scipy.optimize.bisect(get_coords_delta, 0, 0.1,
+        d = scipy.optimize.bisect(get_coords_delta, 0, 0.5,
                                   xtol=0.001, rtol=0.01)
         dcoords[i, :] = d * versor
     return dcoords
