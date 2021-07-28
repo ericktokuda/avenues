@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import matplotlib.collections as mc
 import pandas as pd
 from myutils import info, create_readme, graph
+from scipy.stats import pearsonr
 
 ##########################################################
 def plot_global(df, outdir):
@@ -683,6 +684,14 @@ def plot_means_maxs(allresdir, outdir):
     """Short description"""
     info(inspect.stack()[0][3] + '()')
     meanmax = get_means_maxs(allresdir)
+    # means = []; maxs = []
+    # for c in meanmax[0].keys():
+        # means.append([c, meanmax[0][c]] )
+        # maxs.append([c, meanmax[1][c]] )
+    # df = pd.DataFrame(means, columns=['city', 'gainmean'])
+    # df.to_csv(pjoin(outdir, 'means.csv'), index=False)
+    # df = pd.DataFrame(means, columns=['city', 'gainmax'])
+    # df.to_csv(pjoin(outdir, 'maxs.csv'), index=False)
 
     labels = ['mean', 'max']
     W = 640; H = 480
@@ -715,6 +724,24 @@ def get_means_maxs(allresdir):
 
     return means, maxs
 
+def plot_correlation(meancsv, featscsv, outdir):
+    means = pd.read_csv(meancsv)
+    feats = pd.read_csv(featscsv)
+
+    featlabels = list(feats.columns)
+    featlabels.remove('city')
+
+    for l in featlabels:
+        W = 640; H = 480
+        fig, ax = plt.subplots(figsize=(W*.01, H*.01), dpi=100)
+        
+        ax.scatter(means['gainmean'], feats[l])
+        p = pearsonr(means['gainmean'], feats[l])[0]
+        ax.set_title('Mean gain X {} ({:.02f})'.format(l, p))
+        outpath = pjoin(outdir, l)
+        plt.savefig(outpath)
+    
+
 ##########################################################
 if __name__ == "__main__":
     info(datetime.date.today())
@@ -728,6 +755,11 @@ if __name__ == "__main__":
     os.makedirs(args.outdir, exist_ok=True)
     readmepath = create_readme(sys.argv, args.outdir)
 
+    plot_means_maxs(args.allresdir, args.outdir)
+    meancsv = pjoin(args.allresdir, 'means.csv')
+    featscsv = pjoin(args.allresdir, 'features.csv')
+    plot_correlation(meancsv, featscsv, args.outdir)
+
     dfall = load_all_results(args.allresdir, args.outdir)
     plot_3d_cmap(dfall.copy(), True, args.outdir)
     plot_3d_cmap(dfall.copy(), False, args.outdir)
@@ -738,7 +770,6 @@ if __name__ == "__main__":
     # plot_grid(args.allresdir, args.graphmldir, args.outdir)
     plot_avenues_all(args.allresdir, args.graphmldir, args.outdir)
 
-    # plot_means_maxs(args.allallresdir, args.outdir)
 
     info('Elapsed time:{:.02f}s'.format(time.time()-t0))
     info('Output generated in {}'.format(args.outdir))

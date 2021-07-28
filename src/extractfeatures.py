@@ -36,7 +36,10 @@ def extract_degree_feats(g):
             idx = ids[0]
             fr[k] = ucounts[idx] / n
 
-    return [degrmean, degrstd, fr[3], fr[4], fr[5]]
+    distr, _ = np.histogram(degrees, density=True)
+    positive = distr[distr > 0]
+    degrentr = -(positive*np.log(np.abs(positive))).sum()
+    return [degrmean, degrstd, degrentr, fr[3], fr[4], fr[5]]
 
 ##########################################################
 def calculate_angle_entropy(g, bins):
@@ -59,7 +62,10 @@ def calculate_accessib_feats(accpath):
     """Calculate accessibility features"""
     info(inspect.stack()[0][3] + '()')
     accs = np.loadtxt(accpath)
-    return [np.mean(accs), np.std(accs)]
+    distr, _ = np.histogram(accs, density=True)
+    positive = distr[distr > 0]
+    accentr = -(positive*np.log(np.abs(positive))).sum()
+    return [np.mean(accs), np.std(accs), accentr]
 
 ##########################################################
 def main(graphsdir, accessibdir, outdir):
@@ -108,8 +114,9 @@ def main(graphsdir, accessibdir, outdir):
         data.append(row)
 
     lacuncols = ['lacun{}'.format(r) for r in radii]
-    cols = ['city', 'degrmean', 'degrstd', 'degr3', 'degr4', 'degr5',
-            'entropyang', 'entropyvx'] + lacuncols + ['accmean', 'accstd']
+    cols = ['city', 'degrmean', 'degrstd', 'degrentr', 'degr3', 'degr4', 'degr5',
+            'entropyang', 'entropyvx'] + lacuncols + \
+        ['accmean', 'accstd', 'accentr']
     df = pd.DataFrame(data, columns=cols)
     df.to_csv(outpath, index=False)
 
