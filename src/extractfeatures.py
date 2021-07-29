@@ -36,10 +36,21 @@ def extract_degree_feats(g):
             idx = ids[0]
             fr[k] = ucounts[idx] / n
 
-    distr, _ = np.histogram(degrees, density=True)
+    counts, _ = np.histogram(degrees)
+    distr = counts / np.sum(counts)
     positive = distr[distr > 0]
     degrentr = -(positive*np.log(np.abs(positive))).sum()
     return [degrmean, degrstd, degrentr, fr[3], fr[4], fr[5]]
+
+##########################################################
+def extract_clucoeff_feats(g):
+    """Calculate clustering coefficient entropy """
+    info(inspect.stack()[0][3] + '()')
+    clucoeffs = np.array(g.as_undirected().transitivity_local_undirected())
+    valid = np.argwhere(~np.isnan(clucoeffs)).flatten()
+    counts, _ = np.histogram(valid)
+    distr = counts / np.sum(counts)
+    return -(distr*np.log(np.abs(distr))).sum()
 
 ##########################################################
 def calculate_angle_entropy(g, bins):
@@ -54,7 +65,8 @@ def calculate_angle_entropy(g, bins):
         if tx - sx == 0: angles[i] = 0
         else: angles[i] = np.arctan((ty - sy) / (tx - sx))
 
-    distr, _ = np.histogram(angles, bins=bins, density=True)
+    counts, _ = np.histogram(angles, bins=bins)
+    distr = counts / np.sum(counts)
     return -(distr*np.log(np.abs(distr))).sum()
 
 ##########################################################
@@ -62,7 +74,8 @@ def calculate_accessib_feats(accpath):
     """Calculate accessibility features"""
     info(inspect.stack()[0][3] + '()')
     accs = np.loadtxt(accpath)
-    distr, _ = np.histogram(accs, density=True)
+    counts, _ = np.histogram(accs)
+    distr = counts / np.sum(counts)
     positive = distr[distr > 0]
     accentr = -(positive*np.log(np.abs(positive))).sum()
     return [np.mean(accs), np.std(accs), accentr]
@@ -104,18 +117,20 @@ def main(graphsdir, accessibdir, outdir):
             continue
         g = graph.simplify_graphml(graphml)
         degrfeats = extract_degree_feats(g)
+        clustfeats = extract_clucoeff_feats(g)
         entropyan = calculate_angle_entropy(g, bins)
         entropyvx = calculate_rastered_graph_entropy(graphml, sigma, max_ratio,
                                                     min_width)
         radii, lacun = calculate_lacunarity(graphml, max_radius, delta_radius,
                                             px_per_km)
         accfeats = calculate_accessib_feats(accpath)
-        row = [city] + degrfeats + [entropyan, entropyvx] + list(lacun) + accfeats
+        row = [city] + degrfeats + [clustfeats] + \
+            [entropyan, entropyvx] + list(lacun) + accfeats
         data.append(row)
 
     lacuncols = ['lacun{}'.format(r) for r in radii]
     cols = ['city', 'degrmean', 'degrstd', 'degrentr', 'degr3', 'degr4', 'degr5',
-            'entropyang', 'entropyvx'] + lacuncols + \
+            'clucoeff', 'entropyang', 'entropyvx'] + lacuncols + \
         ['accmean', 'accstd', 'accentr']
     df = pd.DataFrame(data, columns=cols)
     df.to_csv(outpath, index=False)
