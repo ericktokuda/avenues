@@ -578,7 +578,8 @@ def main():
     p0 = np.array([gridx[0, 0], gridy[0, 0]])
     p1 = np.array([gridx[1, 1], gridy[1, 1]])
     # griddist2 = (gridx[1, 0] - gridx[0, 0]) ** 2 + (gridy[0, 1] - gridy[0, 0]) ** 2
-    maxdist = geo.haversine(p0, p1) / 2
+    # maxdist = geo.haversine(p0, p1) / 2
+    maxdist = args.bridgespacing
 
     r = calculate_bridge_edpoints(g['coords'], bounds, gridx, gridy,
                                   angrad, bridgelen, maxdist,
