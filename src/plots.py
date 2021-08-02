@@ -16,6 +16,7 @@ import matplotlib.collections as mc
 import pandas as pd
 from myutils import info, create_readme, graph
 from scipy.stats import pearsonr
+import pickle
 
 ##########################################################
 def plot_global(df, outdir):
@@ -101,9 +102,9 @@ def plot_corr_all(df, localfeats, outdir):
 
         data['l_' + feat + '_mean'] = np.mean(df[cols].values, axis=1)
         data['l_' + feat + '_std'] = np.std(df[cols].values, axis=1)
-    
+
     corr = data.corr()
-    
+
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111)
     cax = ax.matshow(corr,cmap='coolwarm', vmin=-1, vmax=1)
@@ -680,32 +681,25 @@ def plot_avenues_all(resdir, graphmldir, outdirarg):
         plt.close()
 
 ##########################################################
-def plot_means_maxs(allresdir, outdir):
+def plot_means_maxs(means, maxs, outdir):
     """Short description"""
     info(inspect.stack()[0][3] + '()')
-    meanmax = get_means_maxs(allresdir)
-    # means = []; maxs = []
-    # for c in meanmax[0].keys():
-        # means.append([c, meanmax[0][c]] )
-        # maxs.append([c, meanmax[1][c]] )
-    # df = pd.DataFrame(means, columns=['city', 'gainmean'])
-    # df.to_csv(pjoin(outdir, 'means.csv'), index=False)
-    # df = pd.DataFrame(means, columns=['city', 'gainmax'])
-    # df.to_csv(pjoin(outdir, 'maxs.csv'), index=False)
-
+    data = [means, maxs]
     labels = ['mean', 'max']
+    cols = [ 'gain' + l for l in labels ]
     W = 640; H = 480
     for i in range(2):
-        m = meanmax[i]; label = labels[i]
+        m = data[i]; label = labels[i]
         fig, ax = plt.subplots(figsize=(W*.01, H*.01), dpi=100)
-        ax.scatter(m.keys(), m.values())
+        ax.scatter(m.city, m[cols[i]])
         ax.tick_params(axis='x', labelrotation=90)
         plt.tight_layout()
         outpath = pjoin(outdir, '{}.png'.format(label))
         plt.savefig(outpath)
+        plt.close()
 
 ##########################################################
-def get_means_maxs(allresdir):
+def get_means_maxs(allresdir, outdir):
     """Get mean and max for each subdir corresponding to a city"""
     info(inspect.stack()[0][3] + '()')
     speed = '1.0'
@@ -722,25 +716,31 @@ def get_means_maxs(allresdir):
             info('Overwriting means[{}]'.format(city))
         means[city], maxs[city] = df.gain.mean(), df.gain.max()
 
-    return means, maxs
+    means2 = []; maxs2 = []
+    for c in means.keys():
+        means2.append([c, means[c]] )
+        maxs2.append([c, maxs[c]] )
+    meansdf = pd.DataFrame(means2, columns=['city', 'gainmean'])
+    meansdf.to_csv(pjoin(outdir, 'means.csv'), index=False)
+    maxsdf = pd.DataFrame(maxs2, columns=['city', 'gainmax'])
+    maxsdf.to_csv(pjoin(outdir, 'maxs.csv'), index=False)
+    return meansdf, maxsdf
 
-def plot_correlation(meancsv, featscsv, outdir):
-    means = pd.read_csv(meancsv)
+##########################################################
+def plot_correlation(means, featscsv, outdir):
     feats = pd.read_csv(featscsv)
-
     featlabels = list(feats.columns)
     featlabels.remove('city')
 
     for l in featlabels:
         W = 640; H = 480
         fig, ax = plt.subplots(figsize=(W*.01, H*.01), dpi=100)
-        
         ax.scatter(means['gainmean'], feats[l])
         p = pearsonr(means['gainmean'], feats[l])[0]
         ax.set_title('Mean gain X {} ({:.02f})'.format(l, p))
         outpath = pjoin(outdir, l)
         plt.savefig(outpath)
-    
+        plt.close()
 
 ##########################################################
 if __name__ == "__main__":
@@ -755,10 +755,10 @@ if __name__ == "__main__":
     os.makedirs(args.outdir, exist_ok=True)
     readmepath = create_readme(sys.argv, args.outdir)
 
-    plot_means_maxs(args.allresdir, args.outdir)
-    meancsv = pjoin(args.allresdir, 'means.csv')
+    means, maxs = get_means_maxs(args.allresdir, args.outdir)
+    plot_means_maxs(means, maxs, args.outdir)
     featscsv = pjoin(args.allresdir, 'features.csv')
-    plot_correlation(meancsv, featscsv, args.outdir)
+    plot_correlation(means, featscsv, args.outdir)
 
     dfall = load_all_results(args.allresdir, args.outdir)
     plot_3d_cmap(dfall.copy(), True, args.outdir)
@@ -767,7 +767,7 @@ if __name__ == "__main__":
     plot_3d_sizes(dfall.copy(), True, args.outdir)
 
     pardir = os.path.dirname(os.path.dirname(args.allresdir))
-    # plot_grid(args.allresdir, args.graphmldir, args.outdir)
+    plot_grid(args.allresdir, args.graphmldir, args.outdir)
     plot_avenues_all(args.allresdir, args.graphmldir, args.outdir)
 
 
