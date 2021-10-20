@@ -17,7 +17,7 @@ from ventropy import calculate_rastered_graph_entropy
 from lacuncaller import calculate_lacunarity
 
 ##########################################################
-def extract_degree_feats(g, binsz):
+def calculate_vdegree_feats(g):
     """Calculate features related to the degree distribution. Extract the
     mean, std, fraction of vertices with degrees 3, 4 and 5."""
     info(inspect.stack()[0][3] + '()')
@@ -27,7 +27,7 @@ def extract_degree_feats(g, binsz):
     degrstd = np.std(degrees)
     uvals, ucounts = np.unique(degrees, return_counts=True)
 
-    nbins = int((np.max(degrees) - np.min(degrees)) / binsz) + 1
+    # nbins = int((np.max(degrees) - np.min(degrees)) / binsz) + 1
     fr = {}
     for k in [3, 4, 5]:
         ids = np.where(uvals == k)[0]
@@ -37,27 +37,31 @@ def extract_degree_feats(g, binsz):
             idx = ids[0]
             fr[k] = ucounts[idx] / n
 
-    counts, _ = np.histogram(degrees, bins=nbins)
-    distr = counts / np.sum(counts)
-    positive = distr[distr > 0]
-    degrentr = -(positive*np.log(np.abs(positive))).sum()
-    return [degrmean, degrstd, degrentr, fr[3], fr[4], fr[5]]
+    # counts, _ = np.histogram(degrees, bins=nbins)
+    # distr = counts / np.sum(counts)
+    # positive = distr[distr > 0]
+    # degrentr = -(positive*np.log(np.abs(positive))).sum()
+    return [degrmean, degrstd, fr[3], fr[4], fr[5]]
 
 ##########################################################
-def extract_clucoeff_feats(g, binsz):
+def calculate_trans_feats(g):
     """Calculate clustering coefficient entropy """
     info(inspect.stack()[0][3] + '()')
     clucoeffs = np.array(g.as_undirected().transitivity_local_undirected())
     valid = np.argwhere(~np.isnan(clucoeffs)).flatten()
-    nbins = int((np.max(valid) - np.min(valid)) / binsz) + 1
-    counts, _ = np.histogram(valid, bins=nbins)
-    distr = counts / np.sum(counts)
-    return -(distr*np.log(np.abs(distr))).sum()
+    clucoeffs = clucoeffs[valid]
+    # nbins = int((np.max(valid) - np.min(valid)) / binsz) + 1
+    # counts, _ = np.histogram(valid, bins=nbins)
+    # distr = counts / np.sum(counts)
+    # breakpoint()
+    # return -(distr*np.log(np.abs(distr))).sum()
+    return [np.mean(clucoeffs), np.std(clucoeffs)]
 
 ##########################################################
-def calculate_angle_entropy(g, binsz):
+def calculate_eangle_feats(g):
     """Extract orientation from each edge. We adopt the angle 0 from a given point as the horizontal vector pointing to the right. Angles increase increase anti-clockwise.
     """
+    info(inspect.stack()[0][3] + '()')
     coords = np.array([(x, y) for x, y in zip(g.vs['x'], g.vs['y'])])
     angles = - np.ones(g.ecount(), dtype=float)
     for i, e in enumerate(g.es()):
@@ -67,22 +71,24 @@ def calculate_angle_entropy(g, binsz):
         if tx - sx == 0: angles[i] = 0
         else: angles[i] = np.arctan((ty - sy) / (tx - sx))
 
-    nbins = int((np.max(angles) - np.min(angles)) / binsz) + 1
-    counts, _ = np.histogram(angles, bins=nbins)
-    distr = counts / np.sum(counts)
-    return -(distr*np.log(np.abs(distr))).sum()
+    # nbins = int((np.max(angles) - np.min(angles)) / binsz) + 1
+    # counts, _ = np.histogram(angles, bins=nbins)
+    # distr = counts / np.sum(counts)
+    # return -(distr*np.log(np.abs(distr))).sum()
+    return [np.std(angles)]
 
 ##########################################################
-def calculate_accessib_feats(accpath, binsz):
+def calculate_accessib_feats(accpath):
     """Calculate accessibility features"""
     info(inspect.stack()[0][3] + '()')
     accs = np.loadtxt(accpath)
-    nbins = int((np.max(accs) - np.min(accs)) / binsz) + 1
-    counts, _ = np.histogram(accs)
-    distr = counts / np.sum(counts)
-    positive = distr[distr > 0]
-    accentr = -(positive*np.log(np.abs(positive))).sum()
-    return [np.mean(accs), np.std(accs), accentr]
+    # nbins = int((np.max(accs) - np.min(accs)) / binsz) + 1
+    # counts, _ = np.histogram(accs)
+    # distr = counts / np.sum(counts)
+    # positive = distr[distr > 0]
+    # accentr = -(positive*np.log(np.abs(positive))).sum()
+    # return [np.mean(accs), np.std(accs), accentr]
+    return [np.mean(accs), np.std(accs)]
 
 ##########################################################
 def compare_min_max(values, minmax):
@@ -128,18 +134,32 @@ def get_ranges(gfiles, graphsdir, accessibdir, accsuf):
     return ranges
 
 ##########################################################
-def get_binszs(ranges, angledelta):
+def get_binszs(ranges, angledelta, nbins):
     """Get binszs according to the ranges"""
     binszs = {}
     binszs['degree'] = 1
     binszs['angle'] = angledelta
-    binszs['trans'] = (ranges['trans'][1] - ranges['trans'][0]) / 2
-    binszs['accessib'] = (ranges['accessib'][1] - ranges['accessib'][0]) / 2
-    x =  ranges['posx'][1] - ranges['posx'][0] / 2
-    y =  ranges['posy'][1] - ranges['posy'][0] / 2
+    binszs['trans'] = (ranges['trans'][1] - ranges['trans'][0]) / nbins
+    binszs['accessib'] = (ranges['accessib'][1] - ranges['accessib'][0]) / nbins
+    x =  (ranges['posx'][1] - ranges['posx'][0]) / nbins
+    y =  (ranges['posy'][1] - ranges['posy'][0]) / nbins
     binszs['pos'] = min(x, y)
 
     return binszs
+
+        # entropyvx = calculate_rastered_graph_entropy(graphml, sigma, max_ratio,
+                                                     # min_width)
+##########################################################
+def calculate_vposition_feats(g):
+    """Short description """
+    info(inspect.stack()[0][3] + '()')
+    n = g.vcount()
+    xs, ys = np.array(g.vs['x']), np.array(g.vs['y'])
+    x0, y0 = np.sum(xs) / n, np.sum(ys) / n
+    diffs = np.sqrt(np.power((xs - x0), 2) + np.power((ys - y0), 2))
+    std2 = np.sum(diffs) / n
+    return [std2]
+
 ##########################################################
 def main(graphsdir, accessibdir, outdir):
     """Main function"""
@@ -163,46 +183,51 @@ def main(graphsdir, accessibdir, outdir):
     max_radius = 52
     delta_radius = 10
 
-    accstep = 5
-    accsuf = '_undirected_acc{:02d}.txt'.format(accstep)
+    # accstep = 5
+    accsuf05 = '_undirected_acc05.txt'
+    accsuf10 = '_undirected_acc10.txt'
+
+    nbins = 16
 
     # ranges = {'}
-    gfiles = []
-    for f in files:
-        if not f.endswith('.graphml'): continue
-        city = f.replace('.graphml', '')
-        accpath = pjoin(accessibdir, city + accsuf)
-        if not os.path.exists(accpath):
-            info('Accessib file {} does not exist. Skipping'.format(accpath))
-            continue
-        gfiles.append(f)
+    # gfiles = []
+    # for f in files:
+        # if not f.endswith('.graphml'): continue
+        # city = f.replace('.graphml', '')
+        # accpath = pjoin(accessibdir, city + accsuf)
+        # if not os.path.exists(accpath):
+            # info('Accessib file {} does not exist. Skipping'.format(accpath))
+            # continue
+        # gfiles.append(f)
 
-    ranges = get_ranges(gfiles, graphsdir, accessibdir, accsuf)
-    binszs = get_binszs(ranges, angledelta)
+    # ranges = get_ranges(gfiles, graphsdir, accessibdir, accsuf)
+    # binszs = get_binszs(ranges, angledelta, nbins)
 
     data = []
-    for f in gfiles:
+    for f in files:
+        if not f.endswith('.graphml'): continue
         graphml = pjoin(graphsdir, f)
         city = f.replace('.graphml', '')
-        info('{}'.format(f))
-        accpath = pjoin(accessibdir, city + accsuf)
+        info('--- {} ---'.format(f))
+        accpath05 = pjoin(accessibdir, city + accsuf05)
+        accpath10 = pjoin(accessibdir, city + accsuf10)
         g = graph.simplify_graphml(graphml)
-        degrfeats = extract_degree_feats(g, binszs['degree'])
-        clustfeats = extract_clucoeff_feats(g, binszs['trans'])
-        entropyan = calculate_angle_entropy(g, binszs['angle'])
-        entropyvx = calculate_rastered_graph_entropy(graphml, sigma, max_ratio,
-                                                    binszs['pos'], min_width)
+        degfeats = calculate_vdegree_feats(g)
+        transfeats = calculate_trans_feats(g)
+        eangfeats = calculate_eangle_feats(g)
+        vposfeats = calculate_vposition_feats(g)
         radii, lacun = calculate_lacunarity(graphml, max_radius, delta_radius,
                                             px_per_km)
-        accfeats = calculate_accessib_feats(accpath, binszs['accessib'])
-        row = [city] + degrfeats + [clustfeats] + \
-            [entropyan, entropyvx] + list(lacun) + accfeats
+        accfeats05 = calculate_accessib_feats(accpath05)
+        accfeats10 = calculate_accessib_feats(accpath10)
+        row = [city] + degfeats + transfeats + eangfeats + vposfeats \
+            + list(lacun) + accfeats05 + accfeats10
         data.append(row)
 
     lacuncols = ['lacun{}'.format(r) for r in radii]
-    cols = ['city', 'degrmean', 'degrstd', 'degrentr', 'degr3', 'degr4', 'degr5',
-            'clucoeff', 'entropyang', 'entropyvx'] + lacuncols + \
-        ['accmean', 'accstd', 'accentr']
+    cols = ['city', 'degmean', 'degstd', 'deg3', 'deg4', 'deg5',
+            'transmean', 'transstd', 'eangstd', 'vposstd2']
+    cols += lacuncols + ['acc05mean', 'acc05std', 'acc10mean', 'acc10std']
     df = pd.DataFrame(data, columns=cols)
     df.to_csv(outpath, index=False)
 
