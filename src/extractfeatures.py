@@ -151,10 +151,13 @@ def get_binszs(ranges, angledelta, nbins):
                                                      # min_width)
 ##########################################################
 def calculate_vposition_feats(g):
-    """Short description """
+    """Analog measurement to the standard deviation to 2-D. Normalize coordinates to
+    disregard the physical extent of the graph."""
     info(inspect.stack()[0][3] + '()')
     n = g.vcount()
     xs, ys = np.array(g.vs['x']), np.array(g.vs['y'])
+    xs = (xs - np.min(xs)) / (np.max(xs) - np.min(xs))
+    ys = (ys - np.min(ys)) / (np.max(ys) - np.min(ys))
     x0, y0 = np.sum(xs) / n, np.sum(ys) / n
     diffs = np.sqrt(np.power((xs - x0), 2) + np.power((ys - y0), 2))
     std2 = np.sum(diffs) / n
