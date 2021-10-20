@@ -727,76 +727,94 @@ def get_means_maxs(allresdir, outdir):
     return meansdf, maxsdf
 
 ##########################################################
-def plot_correlation(gains, featsdf, featlabels, corrs, lbl, outdir):
+def plot_correlation(gains, featsdf, featlabels, corrs, lbl, outrootdir):
+    outdir = pjoin(outrootdir, 'featx{}gain'.format(lbl))
+    os.makedirs(outdir, exist_ok=True)
     for i, l in enumerate(featlabels):
         W = 640; H = 480
         fig, ax = plt.subplots(figsize=(W*.01, H*.01), dpi=100)
-        ax.scatter(gains, featsdf[l])
-        ax.set_title('{} gain X {} ({:.02f})'.format(lbl, l, corrs[i]))
+        ax.scatter(featsdf[l], gains)
+
+        for j, c in enumerate(featsdf.city):
+            ax.annotate(c, (featsdf.loc[featsdf.city == c][l], gains[j]))
+
+        ax.set_title('{} gain X {}'.format(lbl, l, corrs[i]))
         outpath = pjoin(outdir, l)
         plt.savefig(outpath)
         plt.close()
 
-def plot_features(featsdf, featlabels, outdir):
+##########################################################
+def plot_features(featsdf, featlabels, outrootdir):
+    outdir = pjoin(outrootdir, 'features')
+    os.makedirs(outdir, exist_ok=True)
     for l in featlabels:
         W = 640; H = 480
         fig, ax = plt.subplots(figsize=(W*.01, H*.01), dpi=100)
         for j, c in enumerate(featsdf.city):
-            ax.scatter(j, featsdf.loc[featsdf.city == c][l], label=c)
+            ax.scatter(j, featsdf.loc[featsdf.city == c][l], c='b')
+            ax.annotate(c, (j, featsdf.loc[featsdf.city == c][l]))
         ax.set_xticklabels([])
+        import scipy
+        # corr, _ = scipy.stats.pearsonr(featsdf.city, featsdf[l])
+        # plt.title('corr:{}'.format(corr))
         outpath = pjoin(outdir, 'feat_{}.png'.format(l))
-        plt.legend()
+        # plt.legend()
+        # plt.legend(bbox_to_anchor=(1.05, 1.0), loc='upper left')
+        # for i in range(len(df.city)):
+            # ax.annotate(cities[i], (tr[i, 0], tr[i, 1]))
+
+
         plt.tight_layout()
         plt.savefig(outpath)
         plt.close()
 
-    breakpoint()
     
 ##########################################################
 if __name__ == "__main__":
     info(datetime.date.today())
     t0 = time.time()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--graphmldir', required=True, help='Dir containing the graphml')
-    parser.add_argument('--allresdir', required=True, help='Dir containing the results for each city')
     parser.add_argument('--outdir', default='/tmp/out/', help='Output directory')
     args = parser.parse_args()
+
+    graphmldir = './data/graphml/'
+    allresdir = './data/allres/'
+    featscsv = './data/features.csv'
 
     os.makedirs(args.outdir, exist_ok=True)
     readmepath = create_readme(sys.argv, args.outdir)
 
-    means, maxs = get_means_maxs(args.allresdir, args.outdir)
+    means, maxs = get_means_maxs(allresdir, args.outdir)
     plot_means_maxs(means, maxs, args.outdir)
-    featscsv = pjoin(args.allresdir, 'features.csv')
     featsdf = pd.read_csv(featscsv)
     featlabels = sorted(list(featsdf.columns))
     featlabels.remove('city')
 
+    # Plot features
     plot_features(featsdf, featlabels, args.outdir)
-    corrs1 = []
-    for l in featlabels:
-        corrs1.append(pearsonr(means['gainmean'], featsdf[l])[0])
 
-    corrs2 = []
-    for l in featlabels:
-        corrs2.append(pearsonr(maxs['gainmax'], featsdf[l])[0])
+    corrmean = [ pearsonr(means['gainmean'], featsdf[l])[0] for l in featlabels]
+    corrmax = [ pearsonr(maxs['gainmax'], featsdf[l])[0] for l in featlabels]
 
-    data = {'feat': featlabels, 'cmean': corrs1, 'cmax': corrs2}
+    data = {'feat': featlabels, 'cmean': corrmean, 'cmax': corrmax}
     corrsdf = pd.DataFrame(data)
-    corrsdf.to_csv(pjoin(args.outdir, 'featxgaincorr.csv'), float_format='%.03f',
+    corrsdf.to_csv(pjoin(args.outdir, 'corr_featxgain.csv'), float_format='%.03f',
                    index=False)
 
-    plot_correlation(means['gainmean'], featsdf, featlabels, corrs1, 'Mean', args.outdir)
-    plot_correlation(maxs['gainmax'], featsdf, featlabels, corrs2, 'Max', args.outdir)
-    dfall = load_all_results(args.allresdir, args.outdir)
+    # Plot gain x features
+    plot_correlation(means['gainmean'], featsdf, featlabels, corrmean, 'mean',args.outdir)
+    plot_correlation(maxs['gainmax'], featsdf, featlabels, corrmax, 'max', args.outdir)
+
+    # Plot 3d visualizations
+    dfall = load_all_results(allresdir, args.outdir)
     plot_3d_cmap(dfall.copy(), True, args.outdir)
     plot_3d_cmap(dfall.copy(), False, args.outdir)
     plot_3d_cmap(dfall.copy(), True, args.outdir)
     plot_3d_sizes(dfall.copy(), True, args.outdir)
 
-    pardir = os.path.dirname(os.path.dirname(args.allresdir))
-    plot_grid(args.allresdir, args.graphmldir, args.outdir)
-    plot_avenues_all(args.allresdir, args.graphmldir, args.outdir)
+    pardir = os.path.dirname(os.path.dirname(allresdir))
+    plot_grid(allresdir, graphmldir, args.outdir)
+    plot_avenues_all(allresdir, graphmldir, args.outdir)
 
     info('Elapsed time:{:.02f}s'.format(time.time()-t0))
     info('Output generated in {}'.format(args.outdir))
