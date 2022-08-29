@@ -478,6 +478,7 @@ def plot_3d_cmap(dfall, exact, outdirarg):
                                 opacity=.7,
                                 title='Bridge gain for points in the grid')
 
+            fig.update_traces(marker_size=8)
             fig.update_scenes(xaxis_title='x')
             fig.update_scenes(yaxis_title='y')
             fig.update_scenes(zaxis_title='Angle')
@@ -733,15 +734,44 @@ def plot_correlation(gains, featsdf, featlabels, corrs, lbl, outrootdir):
     for i, l in enumerate(featlabels):
         W = 640; H = 480
         fig, ax = plt.subplots(figsize=(W*.01, H*.01), dpi=100)
-        ax.scatter(featsdf[l], gains)
+        x = (featsdf[l])
+        y = (gains)
+        inds = np.argsort(gains)
+        x = np.array(list(sorted(gains)))
+        y = y[inds]
+
+        ax.scatter(x, y)
 
         for j, c in enumerate(featsdf.city):
-            ax.annotate(c, (featsdf.loc[featsdf.city == c][l], gains[j]))
+            abbr = c[:3].upper()
+            if abbr == 'LIV': abbr = 'LV' + c[3].upper()
+            ax.annotate(abbr, ((featsdf.loc[featsdf.city == c][l]), y[j]))
 
-        ax.set_title('{} gain X {}'.format(lbl, l, corrs[i]))
+        ax.set_xlabel('Mean path length gain')
+        ax.set_ylabel(l.capitalize())
+        ax.set_yscale('log')
+        ax.set_xscale('log')
+
+        def linearf(x, a, b):
+            y = a*x + b
+            return y
+
+        from scipy import optimize
+        ret = optimize.curve_fit(linearf, xdata = x, ydata = y)
+        coeffs = ret[0]
+        errs = np.sqrt(np.diag(ret[1]))
+        print('Linear fit of the log values:', coeffs, errs, l)
+        yfit = linearf(x, coeffs[0], coeffs[1])
+        ax.plot(x, yfit, c='orange', label='Linear')
+
+        # ax.set_xlabel('Log of Mean path length gain')
+        # ax.set_ylabel('Log of ' + l.capitalize())
+        # ax.set_title('{} gain X {}'.format(lbl.capitalize(), l, corrs[i]))
         outpath = pjoin(outdir, l)
         plt.savefig(outpath)
         plt.close()
+        pd.DataFrame(np.array([x, y]).T).to_csv(outpath + '_data.csv',
+                                                index=False)
 
 ##########################################################
 def plot_features(featsdf, featlabels, outrootdir):
@@ -752,7 +782,10 @@ def plot_features(featsdf, featlabels, outrootdir):
         fig, ax = plt.subplots(figsize=(W*.01, H*.01), dpi=100)
         for j, c in enumerate(featsdf.city):
             ax.scatter(j, featsdf.loc[featsdf.city == c][l], c='b')
-            ax.annotate(c, (j, featsdf.loc[featsdf.city == c][l]))
+            abbr = c[:3].upper()
+            if abbr == 'LIV': abbr = 'LV' + c[3].upper()
+            # print(c, abbr)
+            ax.annotate(abbr, (j, featsdf.loc[featsdf.city == c][l]))
         ax.set_xticklabels([])
         import scipy
         # corr, _ = scipy.stats.pearsonr(featsdf.city, featsdf[l])
@@ -768,7 +801,7 @@ def plot_features(featsdf, featlabels, outrootdir):
         plt.savefig(outpath)
         plt.close()
 
-    
+
 ##########################################################
 if __name__ == "__main__":
     info(datetime.date.today())
@@ -785,36 +818,39 @@ if __name__ == "__main__":
     readmepath = create_readme(sys.argv, args.outdir)
 
     means, maxs = get_means_maxs(allresdir, args.outdir)
-    plot_means_maxs(means, maxs, args.outdir)
+    # plot_means_maxs(means, maxs, args.outdir)
     featsdf = pd.read_csv(featscsv)
     featlabels = sorted(list(featsdf.columns))
     featlabels.remove('city')
 
     # Plot features
-    plot_features(featsdf, featlabels, args.outdir)
+    # plot_features(featsdf, featlabels, args.outdir)
+
 
     corrmean = [ pearsonr(means['gainmean'], featsdf[l])[0] for l in featlabels]
-    corrmax = [ pearsonr(maxs['gainmax'], featsdf[l])[0] for l in featlabels]
+    # corrmax = [ pearsonr(maxs['gainmax'], featsdf[l])[0] for l in featlabels]
 
-    data = {'feat': featlabels, 'cmean': corrmean, 'cmax': corrmax}
-    corrsdf = pd.DataFrame(data)
-    corrsdf.to_csv(pjoin(args.outdir, 'corr_featxgain.csv'), float_format='%.03f',
-                   index=False)
+    # data = {'feat': featlabels, 'cmean': corrmean, 'cmax': corrmax}
+    # corrsdf = pd.DataFrame(data)
+    # corrsdf.to_csv(pjoin(args.outdir, 'corr_featxgain.csv'), float_format='%.03f',
+                   # index=False)
 
     # Plot gain x features
     plot_correlation(means['gainmean'], featsdf, featlabels, corrmean, 'mean',args.outdir)
-    plot_correlation(maxs['gainmax'], featsdf, featlabels, corrmax, 'max', args.outdir)
+    breakpoint()
+
+    # plot_correlation(maxs['gainmax'], featsdf, featlabels, corrmax, 'max', args.outdir)
 
     # Plot 3d visualizations
-    dfall = load_all_results(allresdir, args.outdir)
-    plot_3d_cmap(dfall.copy(), True, args.outdir)
-    plot_3d_cmap(dfall.copy(), False, args.outdir)
-    plot_3d_cmap(dfall.copy(), True, args.outdir)
-    plot_3d_sizes(dfall.copy(), True, args.outdir)
+    # dfall = load_all_results(allresdir, args.outdir)
+    # plot_3d_cmap(dfall.copy(), True, args.outdir)
+    # plot_3d_cmap(dfall.copy(), False, args.outdir)
+    # plot_3d_cmap(dfall.copy(), True, args.outdir)
+    # plot_3d_sizes(dfall.copy(), True, args.outdir)
 
     pardir = os.path.dirname(os.path.dirname(allresdir))
-    plot_grid(allresdir, graphmldir, args.outdir)
-    plot_avenues_all(allresdir, graphmldir, args.outdir)
+    # plot_grid(allresdir, graphmldir, args.outdir)
+    # plot_avenues_all(allresdir, graphmldir, args.outdir)
 
     info('Elapsed time:{:.02f}s'.format(time.time()-t0))
     info('Output generated in {}'.format(args.outdir))
